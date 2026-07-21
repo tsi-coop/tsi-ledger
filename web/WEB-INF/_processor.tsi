@@ -1,0 +1,7 @@
+# Service definitions
+# /api/v1/app is admin-only (X-Admin-Key). Everything else is tenant-facing (X-API-Key).
+/api/v1/app=org.tsicoop.ledger.service.v1.App
+/api/v1/accounts=org.tsicoop.ledger.service.v1.Accounts
+/api/v1/ledger=org.tsicoop.ledger.service.v1.Ledger
+/api/v1/audit=org.tsicoop.ledger.service.v1.Audit
+/api/v1/reports=org.tsicoop.ledger.service.v1.Reports

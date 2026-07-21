@@ -1,0 +1,64 @@
+# TSI Ledger Service - Docker Compose
+#
+# Host ports default to 5438 (Postgres) / 8086 (app) instead of the usual
+# 5432/8080 — several other TSI products (tsi-dpdp-cms, tsi-nexus, tsi-compass,
+# tsi-privacy-vault) commonly run side by side on the same evaluation host and
+# already claim 5432-5437 / 8080-8085. Override via DB_PORT_MAP / APP_PORT_MAP
+# in .env if these also collide with something on your machine.
+
+x-db-credentials: &db-credentials
+  POSTGRES_DB: "${POSTGRES_DB:-tsi_ledger}"
+  POSTGRES_USER: "${POSTGRES_USER:-tsi_ledger_admin}"
+  POSTGRES_PASSWORD: "${POSTGRES_PASSWD:-secure_dev_password}"
+
+services:
+  postgres_db:
+    image: postgres:15-alpine
+    container_name: tsi_ledger_postgres
+    restart: unless-stopped
+    environment:
+      <<: *db-credentials
+    ports:
+      - "${DB_PORT_MAP:-5438:5432}"
+    volumes:
+      - ledger_data:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ledger_network
+
+  jetty_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tsi_ledger_engine
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT_MAP:-8086:8080}"
+    environment:
+      POSTGRES_HOST: "jdbc:postgresql://postgres_db:5432"
+      POSTGRES_DB: "${POSTGRES_DB:-tsi_ledger}"
+      POSTGRES_USER: "${POSTGRES_USER:-tsi_ledger_admin}"
+      POSTGRES_PASSWD: "${POSTGRES_PASSWD:-secure_dev_password}"
+      TSI_LEDGER_ENV: "${TSI_LEDGER_ENV:-local}"
+      # LOCAL EVALUATION DEFAULTS — override all of these in production via environment or secrets manager
+      JWT_SECRET: "${JWT_SECRET:-tsi-ledger-local-dev-secret-do-not-use-in-production}"
+      ADMIN_MASTER_KEY: "${ADMIN_MASTER_KEY:-tsi-ledger-local-dev-admin-key-do-not-use-in-production}"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-http://localhost:8086}"
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+    networks:
+      - ledger_network
+
+networks:
+  ledger_network:
+    driver: bridge
+
+volumes:
+  ledger_data:
+    driver: local

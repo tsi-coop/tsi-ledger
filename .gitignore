@@ -1,0 +1,11 @@
+# Default ignored files
+/.idea/
+/target/
+.env
+.help
+.help2
+/.antigravitycli/
+/.claude/
+/server/.env
+*.swp
+
