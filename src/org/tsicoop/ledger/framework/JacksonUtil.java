@@ -19,7 +19,8 @@ import java.util.Map;
 public class JacksonUtil {
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
-            .configure(DeserializationFeature.USE_LONG_FOR_INTS, true); // match json-simple's Long for integers
+            .configure(DeserializationFeature.USE_LONG_FOR_INTS, true) // match json-simple's Long for integers
+            .configure(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS, true); // money: exact decimal, never a lossy double
 
     private JacksonUtil() {}
 
