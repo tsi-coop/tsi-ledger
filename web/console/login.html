@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TSI Ledger — Ops Console Login</title>
+  <link rel="stylesheet" href="assets/console.css">
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-card { width: 100%; max-width: 380px; }
+    .login-card h1 { text-align: center; }
+    .login-card .sub { text-align: center; color: var(--muted); margin-bottom: 24px; }
+    .login-card button { width: 100%; justify-content: center; margin-top: 6px; }
+  </style>
+</head>
+<body>
+
+<div class="card login-card">
+  <h1>TSI Ledger</h1>
+  <p class="sub">Ops Console</p>
+
+  <div id="login-error" class="alert error" style="display:none"></div>
+
+  <form id="login-form">
+    <div class="field">
+      <label for="admin-key">Admin Master Key</label>
+      <input id="admin-key" type="password" autocomplete="current-password" placeholder="Paste ADMIN_MASTER_KEY" required autofocus>
+    </div>
+    <button type="submit" class="primary" id="login-btn">Sign In</button>
+  </form>
+  <p class="hint" style="text-align:center;margin-top:16px">
+    Gates App/API-key provisioning only. Browsing a tenant's accounts, entries, audit, or
+    reports needs that App's own API key, entered on those pages.
+  </p>
+</div>
+
+<script>
+  const params = new URLSearchParams(location.search);
+  const next = params.get('next') || 'dashboard.html';
+
+  // If a session cookie is already valid, skip straight past the login form.
+  // (Not using adminApi() here — its 401 handler would redirect back to this
+  // same page and loop.)
+  fetch('/api/v1/app', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ _func: 'list_apps' })
+  }).then(r => { if (r.ok) location.href = next; }).catch(() => {});
+
+  const form = document.getElementById('login-form');
+  const errorBox = document.getElementById('login-error');
+  const btn = document.getElementById('login-btn');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBox.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = 'Signing in…';
+
+    const key = document.getElementById('admin-key').value;
+    try {
+      const res = await fetch('/api/v1/app', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Key': key },
+        body: JSON.stringify({ _func: 'admin_login' })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.authenticated) {
+        location.href = next;
+        return;
+      }
+      errorBox.textContent = res.status === 401
+        ? 'Invalid admin master key.'
+        : (data.message || 'Login failed.');
+      errorBox.style.display = 'block';
+    } catch (err) {
+      errorBox.textContent = 'Could not reach the server: ' + err.message;
+      errorBox.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+    }
+  });
+</script>
+</body>
+</html>

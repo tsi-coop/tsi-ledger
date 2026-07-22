@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chart of Accounts — TSI Ledger Ops Console</title>
+  <link rel="stylesheet" href="assets/console.css">
+</head>
+<body>
+<script src="assets/console.js"></script>
+<script>
+  const content = renderShell('accounts', 'Chart of Accounts', 'Browse and create accounts for one tenant App.');
+  content.innerHTML = `<div id="tenant-bar"></div><div id="accounts-app" style="display:none"></div>`;
+
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-overlay" id="view-modal">
+      <div class="modal">
+        <h2>Account</h2>
+        <pre id="view-modal-body" class="mono" style="white-space:pre-wrap"></pre>
+        <div class="modal-actions"><button onclick="closeModal('view-modal')">Close</button></div>
+      </div>
+    </div>
+  `);
+  function closeModal(id) { qs(id).classList.remove('open'); }
+
+  const ACCOUNT_TYPES = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'];
+
+  function init() {
+    const app = qs('accounts-app');
+    app.style.display = 'block';
+    app.innerHTML = `
+      <div class="card">
+        <h2>New Account</h2>
+        <form id="create-form">
+          <div class="field-row">
+            <div class="field">
+              <label for="acct-code">Account Code</label>
+              <input id="acct-code" required maxlength="32" placeholder="1010">
+            </div>
+            <div class="field">
+              <label for="acct-name">Account Name</label>
+              <input id="acct-name" required maxlength="128" placeholder="Cash">
+            </div>
+            <div class="field">
+              <label for="acct-type">Account Type</label>
+              <select id="acct-type">${ACCOUNT_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}</select>
+            </div>
+          </div>
+          <button type="submit" class="primary">Create Account</button>
+          <span id="create-msg"></span>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>
+          Accounts
+          <span>
+            <select id="filter-type" style="width:auto;display:inline-block">
+              <option value="">All Types</option>
+              ${ACCOUNT_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+            </select>
+            <label style="display:inline-flex;align-items:center;gap:6px;font-weight:400;margin-left:10px">
+              <input type="checkbox" id="filter-inactive" style="width:auto"> Show inactive
+            </label>
+          </span>
+        </h2>
+        <div id="accounts-error"></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Natural Balance</th><th>Status</th><th></th></tr></thead>
+            <tbody id="accounts-body"><tr class="empty-row"><td colspan="6">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    qs('create-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msg = qs('create-msg');
+      msg.textContent = '';
+      try {
+        await tenantApi('/api/v1/accounts', 'create_account', {
+          account_code: qs('acct-code').value.trim(),
+          account_name: qs('acct-name').value.trim(),
+          account_type: qs('acct-type').value
+        });
+        qs('acct-code').value = ''; qs('acct-name').value = '';
+        loadAccounts();
+      } catch (err) {
+        msg.innerHTML = `<span style="color:var(--danger)">${esc(err.message)}</span>`;
+      }
+    });
+
+    qs('filter-type').addEventListener('change', loadAccounts);
+    qs('filter-inactive').addEventListener('change', loadAccounts);
+
+    loadAccounts();
+  }
+
+  async function loadAccounts() {
+    const body = qs('accounts-body');
+    const errBox = qs('accounts-error');
+    errBox.innerHTML = '';
+    body.innerHTML = '<tr class="empty-row"><td colspan="6">Loading…</td></tr>';
+    try {
+      const type = qs('filter-type').value;
+      const includeInactive = qs('filter-inactive').checked;
+      const params = {};
+      if (type) params.account_type = type;
+      if (includeInactive) params.include_inactive = true;
+      const accounts = await tenantApi('/api/v1/accounts', 'list_accounts', params);
+      body.innerHTML = accounts.length === 0
+        ? '<tr class="empty-row"><td colspan="6">No accounts match.</td></tr>'
+        : accounts.map(a => `
+          <tr>
+            <td><code>${esc(a.account_code)}</code></td>
+            <td>${esc(a.account_name)}</td>
+            <td><span class="badge gray">${esc(a.account_type)}</span></td>
+            <td>${esc(a.natural_balance)}</td>
+            <td>${a.is_active ? '<span class="badge green">Active</span>' : '<span class="badge red">Inactive</span>'}</td>
+            <td><button class="small" onclick='viewAccount(${JSON.stringify(a.id)})'>View</button></td>
+          </tr>`).join('');
+    } catch (e) {
+      if (e instanceof TenantAuthError) { errBox.innerHTML = tenantAuthErrorHtml(); body.innerHTML = ''; return; }
+      errBox.innerHTML = `<div class="alert error">${esc(e.message)}</div>`;
+      body.innerHTML = '';
+    }
+  }
+
+  async function viewAccount(id) {
+    try {
+      const account = await tenantApi('/api/v1/accounts', 'get_account', { account_id: id });
+      qs('view-modal-body').textContent = JSON.stringify(account, null, 2);
+      qs('view-modal').classList.add('open');
+    } catch (e) { alert('Failed to load account: ' + e.message); }
+  }
+
+  renderTenantKeyBar('tenant-bar', init);
+</script>
+</body>
+</html>

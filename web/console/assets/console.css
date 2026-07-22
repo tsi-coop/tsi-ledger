@@ -1,0 +1,240 @@
+/* TSI Ledger — Ops Console shared styles. Self-hosted (no CDN): the API's
+   CSP wouldn't allow one anyway, and this stays usable with no internet
+   egress from the container. */
+
+:root {
+  --primary: #1d4ed8;
+  --primary-dark: #1e40af;
+  --accent: #059669;
+  --danger: #dc2626;
+  --warning: #b45309;
+  --ink: #0f172a;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --radius: 10px;
+  --sidebar-w: 230px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85em; }
+
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---- Shell layout (sidebar + topbar + main) ---- */
+
+.shell-sidebar {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: var(--sidebar-w);
+  background: var(--ink);
+  color: #cbd5e1;
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  transform: translateX(-100%);
+  transition: transform 0.2s ease;
+}
+.shell-sidebar.open { transform: translateX(0); }
+
+.shell-brand {
+  padding: 20px 18px;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #fff;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.shell-brand span { color: #93c5fd; }
+
+.shell-nav { flex: 1; padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; }
+.shell-nav a {
+  color: #cbd5e1;
+  text-decoration: none;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-weight: 500;
+}
+.shell-nav a:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.shell-nav a.active { background: var(--primary); color: #fff; }
+
+.shell-foot { padding: 14px; border-top: 1px solid rgba(255,255,255,0.08); }
+.shell-foot button { width: 100%; }
+
+.shell-topbar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+.shell-topbar button { background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--ink); }
+
+.shell-backdrop {
+  display: none;
+  position: fixed; inset: 0; background: rgba(15,23,42,0.5); z-index: 45;
+}
+.shell-backdrop.open { display: block; }
+
+main.shell-main { padding: 28px 32px; max-width: 1100px; }
+
+@media (min-width: 900px) {
+  .shell-sidebar { transform: translateX(0); }
+  .shell-topbar { display: none !important; }
+  main.shell-main { margin-left: var(--sidebar-w); }
+}
+@media (max-width: 899px) {
+  .shell-topbar { display: flex; }
+  main.shell-main { margin-left: 0; }
+}
+
+h1 { font-size: 1.5rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 1.1rem; margin: 0 0 12px; }
+.page-sub { color: var(--muted); margin: 0 0 24px; }
+
+/* ---- Cards, grids ---- */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+.card h2 { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.stat-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+}
+.stat-card .label { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.stat-card .value { font-size: 1.7rem; font-weight: 700; margin-top: 4px; }
+.stat-card.ok { border-left-color: var(--accent); }
+.stat-card.bad { border-left-color: var(--danger); }
+
+/* ---- Forms ---- */
+
+label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+input, select, textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: #fff;
+  color: var(--ink);
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); outline-offset: 0; border-color: var(--primary); }
+.field { margin-bottom: 14px; }
+.field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.hint { color: var(--muted); font-size: 0.78rem; margin-top: 4px; }
+
+/* ---- Buttons ---- */
+
+button, .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+button:hover { background: #f1f5f9; }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+button.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+button.primary:hover { background: var(--primary-dark); }
+button.danger { background: #fff; border-color: var(--danger); color: var(--danger); }
+button.danger:hover { background: #fef2f2; }
+button.ghost { background: transparent; border-color: transparent; color: var(--primary); padding: 6px 8px; }
+button.small { padding: 5px 10px; font-size: 0.78rem; }
+
+/* ---- Tables ---- */
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.86rem; vertical-align: top; }
+th { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; }
+tbody tr:hover { background: #f8fafc; }
+.table-wrap { overflow-x: auto; }
+.empty-row td { text-align: center; color: var(--muted); padding: 28px; }
+
+/* ---- Badges / pills ---- */
+
+.badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; }
+.badge.green { background: #dcfce7; color: #166534; }
+.badge.red { background: #fee2e2; color: #991b1b; }
+.badge.gray { background: #f1f5f9; color: #475569; }
+.badge.blue { background: #dbeafe; color: #1e40af; }
+.badge.amber { background: #fef3c7; color: #92400e; }
+
+/* ---- Alerts / banners ---- */
+
+.alert { padding: 12px 14px; border-radius: 8px; font-size: 0.86rem; margin-bottom: 16px; }
+.alert.error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+.alert.success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+.alert.info { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+.alert.warn { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+
+/* ---- Modal ---- */
+
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0; background: rgba(15,23,42,0.55);
+  align-items: center; justify-content: center; z-index: 200; padding: 16px;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: #fff; border-radius: 14px; padding: 26px;
+  max-width: 560px; width: 100%; max-height: 88vh; overflow-y: auto;
+  box-shadow: 0 24px 48px rgba(0,0,0,0.25);
+}
+.modal h2 { margin-top: 0; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+/* ---- Key display box (one-time secrets) ---- */
+
+.key-box {
+  display: flex; align-items: center; gap: 8px;
+  background: #0f172a; color: #86efac;
+  padding: 10px 12px; border-radius: 8px; margin: 8px 0;
+  font-family: ui-monospace, monospace; font-size: 0.82rem;
+  overflow-x: auto; white-space: nowrap;
+}
+.key-box button { flex-shrink: 0; }
+
+/* ---- Misc ---- */
+
+.spinner { color: var(--muted); font-size: 0.85rem; padding: 20px; text-align: center; }
+.section-gap { margin-top: 28px; }
+.flex-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.muted { color: var(--muted); }
+.right { text-align: right; }
+.entry-lines-editor .line-row { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 8px; margin-bottom: 8px; align-items: end; }
+.balance-check { font-weight: 700; padding: 8px 12px; border-radius: 8px; margin-top: 10px; }
+.balance-check.ok { background: #ecfdf5; color: #065f46; }
+.balance-check.bad { background: #fef2f2; color: #991b1b; }

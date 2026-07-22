@@ -74,7 +74,7 @@ public class Accounts implements Action {
             output.put("account_code", accountCode);
             output.put("account_name", accountName);
             output.put("account_type", accountType);
-            output.put("natural_balance", naturalBalance(accountType));
+            output.put("natural_balance", AccountingRules.naturalBalance(accountType));
             output.put("is_active", rs.getBoolean("is_active"));
             output.put("created_at", rs.getTimestamp("created_at").toInstant().toString());
             OutputProcessor.send(res, 201, output);
@@ -150,25 +150,10 @@ public class Accounts implements Action {
         account.put("account_code", rs.getString("account_code"));
         account.put("account_name", rs.getString("account_name"));
         account.put("account_type", accountType);
-        account.put("natural_balance", naturalBalance(accountType));
+        account.put("natural_balance", AccountingRules.naturalBalance(accountType));
         account.put("is_active", rs.getBoolean("is_active"));
         account.put("created_at", rs.getTimestamp("created_at").toInstant().toString());
         return account;
-    }
-
-    /** FSD Section 2's Account Classifications & Natural Balances table. */
-    private static String naturalBalance(String accountType) {
-        switch (accountType) {
-            case "ASSET":
-            case "EXPENSE":
-                return "DEBIT";
-            case "LIABILITY":
-            case "EQUITY":
-            case "REVENUE":
-                return "CREDIT";
-            default:
-                throw new IllegalStateException("Unknown account_type: " + accountType);
-        }
     }
 
     private String normalizeAccountType(String raw, HttpServletResponse res, HttpServletRequest req) {

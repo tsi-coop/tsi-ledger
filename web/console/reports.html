@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reports — TSI Ledger Ops Console</title>
+  <link rel="stylesheet" href="assets/console.css">
+</head>
+<body>
+<script src="assets/console.js"></script>
+<script>
+  const content = renderShell('reports', 'Reports', 'Trial balance and balance sheet, computed live from journal_entries/entry_lines.');
+  content.innerHTML = `<div id="tenant-bar"></div><div id="reports-app" style="display:none"></div>`;
+
+  function init() {
+    const app = qs('reports-app');
+    app.style.display = 'block';
+    app.innerHTML = `
+      <div class="card">
+        <h2>Trial Balance</h2>
+        <div class="field-row" style="align-items:end;max-width:420px">
+          <div class="field">
+            <label for="tb-date">As Of Date (optional)</label>
+            <input id="tb-date" type="date">
+          </div>
+          <div class="field"><button class="primary" id="tb-run">Run</button></div>
+        </div>
+        <div id="tb-result"></div>
+      </div>
+
+      <div class="card">
+        <h2>Balance Sheet</h2>
+        <p class="hint" style="margin-top:-6px">Assets = Liabilities + Equity. Revenue/Expense accounts aren't
+          included — there's no closing-entry mechanism in this ledger to fold them into Equity, so they only
+          appear on the Trial Balance above.</p>
+        <div class="field-row" style="align-items:end;max-width:420px">
+          <div class="field">
+            <label for="bs-date">As Of Date (optional)</label>
+            <input id="bs-date" type="date">
+          </div>
+          <div class="field"><button class="primary" id="bs-run">Run</button></div>
+        </div>
+        <div id="bs-result"></div>
+      </div>
+    `;
+    qs('tb-run').addEventListener('click', runTrialBalance);
+    qs('bs-run').addEventListener('click', runBalanceSheet);
+  }
+
+  async function runTrialBalance() {
+    const box = qs('tb-result');
+    box.innerHTML = '<p class="spinner">Loading…</p>';
+    try {
+      const date = qs('tb-date').value;
+      const params = {};
+      if (date) params.as_of_date = date;
+      const r = await tenantApi('/api/v1/reports', 'trial_balance', params);
+
+      box.innerHTML = `
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Code</th><th>Name</th><th>Type</th><th class="right">Debit</th><th class="right">Credit</th></tr></thead>
+            <tbody>
+              ${r.accounts.length === 0 ? '<tr class="empty-row"><td colspan="5">No accounts.</td></tr>' : r.accounts.map(a => `
+                <tr>
+                  <td><code>${esc(a.account_code)}</code></td>
+                  <td>${esc(a.account_name)}</td>
+                  <td><span class="badge gray">${esc(a.account_type)}</span></td>
+                  <td class="right">${fmtAmount(a.debit_total)}</td>
+                  <td class="right">${fmtAmount(a.credit_total)}</td>
+                </tr>`).join('')}
+            </tbody>
+            <tfoot>
+              <tr style="font-weight:700">
+                <td colspan="3">Total</td>
+                <td class="right">${fmtAmount(r.total_debits)}</td>
+                <td class="right">${fmtAmount(r.total_credits)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div class="alert ${r.balanced ? 'success' : 'error'}" style="margin-top:14px">
+          ${r.balanced ? 'Balanced ✓ — total debits equal total credits.' : 'Not balanced — this should never happen on an untampered chain.'}
+        </div>
+      `;
+    } catch (e) {
+      box.innerHTML = e instanceof TenantAuthError ? tenantAuthErrorHtml() : `<div class="alert error">${esc(e.message)}</div>`;
+    }
+  }
+
+  function balanceSheetSection(title, rows) {
+    return `
+      <h2 style="font-size:0.95rem;margin-top:18px">${esc(title)}</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Code</th><th>Name</th><th class="right">Balance</th></tr></thead>
+          <tbody>
+            ${rows.length === 0 ? '<tr class="empty-row"><td colspan="3">None.</td></tr>' : rows.map(a => `
+              <tr><td><code>${esc(a.account_code)}</code></td><td>${esc(a.account_name)}</td><td class="right">${fmtAmount(a.balance)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function runBalanceSheet() {
+    const box = qs('bs-result');
+    box.innerHTML = '<p class="spinner">Loading…</p>';
+    try {
+      const date = qs('bs-date').value;
+      const params = {};
+      if (date) params.as_of_date = date;
+      const r = await tenantApi('/api/v1/reports', 'balance_sheet', params);
+
+      box.innerHTML = `
+        <div class="stat-grid">
+          <div class="stat-card"><div class="label">Assets</div><div class="value">${fmtAmount(r.assets_total)}</div></div>
+          <div class="stat-card"><div class="label">Liabilities</div><div class="value">${fmtAmount(r.liabilities_total)}</div></div>
+          <div class="stat-card"><div class="label">Equity</div><div class="value">${fmtAmount(r.equity_total)}</div></div>
+        </div>
+        ${balanceSheetSection('Assets', r.assets)}
+        ${balanceSheetSection('Liabilities', r.liabilities)}
+        ${balanceSheetSection('Equity', r.equity)}
+        <div class="alert ${r.balanced ? 'success' : 'warn'}" style="margin-top:14px">
+          ${r.balanced
+            ? 'Balanced ✓ — Assets = Liabilities + Equity.'
+            : `Not balanced (Assets ${fmtAmount(r.assets_total)} vs L+E ${fmtAmount(Number(r.liabilities_total) + Number(r.equity_total))}) — expected if Revenue/Expense activity hasn't been closed to Equity.`}
+        </div>
+      `;
+    } catch (e) {
+      box.innerHTML = e instanceof TenantAuthError ? tenantAuthErrorHtml() : `<div class="alert error">${esc(e.message)}</div>`;
+    }
+  }
+
+  renderTenantKeyBar('tenant-bar', init);
+</script>
+</body>
+</html>

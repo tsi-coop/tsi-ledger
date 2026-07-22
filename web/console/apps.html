@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apps — TSI Ledger Ops Console</title>
+  <link rel="stylesheet" href="assets/console.css">
+</head>
+<body>
+<script src="assets/console.js"></script>
+<script>
+  const content = renderShell('apps', 'Apps', 'Tenant provisioning — create Apps and manage their live/test API keys.');
+
+  content.innerHTML = `
+    <div class="card">
+      <h2>
+        Apps
+        <button class="primary" id="new-app-btn">+ New App</button>
+      </h2>
+      <div id="apps-error"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>App Name</th><th>ID</th><th>Status</th><th>Live Key</th><th>Test Key</th><th>Created</th><th></th></tr></thead>
+          <tbody id="apps-body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML('beforeend', `
+    <!-- Create App modal -->
+    <div class="modal-overlay" id="create-modal">
+      <div class="modal">
+        <h2>New App</h2>
+        <form id="create-form">
+          <div class="field">
+            <label for="new-app-name">App Name</label>
+            <input id="new-app-name" required maxlength="255" placeholder="e.g. Acme Bookkeeping">
+          </div>
+          <div class="modal-actions">
+            <button type="button" onclick="closeModal('create-modal')">Cancel</button>
+            <button type="submit" class="primary">Create</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- One-time key reveal modal -->
+    <div class="modal-overlay" id="keys-modal">
+      <div class="modal">
+        <h2 id="keys-modal-title">API Key</h2>
+        <div class="alert warn">Shown once — store it now. It cannot be retrieved again; only a hash is kept.</div>
+        <div id="keys-modal-body"></div>
+        <div class="modal-actions">
+          <button onclick="closeModal('keys-modal')">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manage App modal -->
+    <div class="modal-overlay" id="manage-modal">
+      <div class="modal">
+        <h2 id="manage-modal-title">Manage App</h2>
+        <div id="manage-modal-body"></div>
+        <div class="modal-actions">
+          <button onclick="closeModal('manage-modal')">Close</button>
+        </div>
+      </div>
+    </div>
+  `);
+
+  function openModal(id) { qs(id).classList.add('open'); }
+  function closeModal(id) { qs(id).classList.remove('open'); }
+
+  let appsCache = [];
+
+  async function loadApps() {
+    qs('apps-error').innerHTML = '';
+    try {
+      appsCache = await adminApi('list_apps');
+      qs('apps-body').innerHTML = appsCache.length === 0
+        ? '<tr class="empty-row"><td colspan="7">No Apps yet.</td></tr>'
+        : appsCache.map(a => `
+          <tr>
+            <td>${esc(a.app_name)}</td>
+            <td><code title="${esc(a.id)}">${shortId(a.id)}</code></td>
+            <td>${a.is_active ? '<span class="badge green">Active</span>' : '<span class="badge red">Inactive</span>'}</td>
+            <td>${a.has_live_key ? '<span class="badge blue">Set</span>' : '<span class="badge gray">None</span>'}</td>
+            <td>${a.has_test_key ? '<span class="badge blue">Set</span>' : '<span class="badge gray">None</span>'}</td>
+            <td>${fmtDate(a.created_at)}</td>
+            <td><button class="small" onclick="openManage('${esc(a.id)}')">Manage</button></td>
+          </tr>`).join('');
+    } catch (e) {
+      qs('apps-error').innerHTML = `<div class="alert error">${esc(e.message)}</div>`;
+    }
+  }
+
+  qs('new-app-btn').addEventListener('click', () => { qs('new-app-name').value = ''; openModal('create-modal'); });
+
+  qs('create-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = qs('new-app-name').value.trim();
+    if (!name) return;
+    try {
+      const app = await adminApi('create_app', { app_name: name });
+      closeModal('create-modal');
+      showKeys('New App: ' + app.app_name, [
+        { label: 'Live API Key', value: app.live_api_key },
+        { label: 'Test API Key', value: app.test_api_key }
+      ]);
+      loadApps();
+    } catch (err) {
+      alert('Failed to create app: ' + err.message);
+    }
+  });
+
+  function showKeys(title, entries) {
+    qs('keys-modal-title').textContent = title;
+    qs('keys-modal-body').innerHTML = entries.map((en, i) => `
+      <label>${esc(en.label)}</label>
+      <div class="key-box">
+        <span style="overflow:hidden;text-overflow:ellipsis">${esc(en.value)}</span>
+        <button class="small" onclick="copyText('${esc(en.value)}', this)">Copy</button>
+      </div>
+      <button class="small" onclick="useKeyElsewhere('${esc(en.value)}')" style="margin-bottom:14px">Browse this App's Accounts &rarr;</button>
+    `).join('');
+    openModal('keys-modal');
+  }
+
+  function useKeyElsewhere(key) {
+    setTenantKey(key);
+    location.href = 'accounts.html';
+  }
+
+  function openManage(appId) {
+    const app = appsCache.find(a => a.id === appId);
+    if (!app) return;
+    qs('manage-modal-title').textContent = app.app_name;
+    qs('manage-modal-body').innerHTML = `
+      <p class="muted mono">${esc(app.id)}</p>
+      <p>${app.is_active ? '<span class="badge green">Active</span>' : '<span class="badge red">Inactive</span>'}</p>
+      <div class="section-gap">
+        <h2 style="font-size:0.95rem">Live Key</h2>
+        <div class="field-row">
+          <button ${!app.is_active ? 'disabled' : ''} onclick="rotateKey('${appId}','LIVE')">Rotate</button>
+          <button class="danger" ${!app.has_live_key ? 'disabled' : ''} onclick="revokeKey('${appId}','LIVE')">Revoke</button>
+        </div>
+      </div>
+      <div class="section-gap">
+        <h2 style="font-size:0.95rem">Test Key</h2>
+        <div class="field-row">
+          <button ${!app.is_active ? 'disabled' : ''} onclick="rotateKey('${appId}','TEST')">Rotate</button>
+          <button class="danger" ${!app.has_test_key ? 'disabled' : ''} onclick="revokeKey('${appId}','TEST')">Revoke</button>
+        </div>
+      </div>
+      <div class="section-gap">
+        <h2 style="font-size:0.95rem">Danger Zone</h2>
+        <button class="danger" ${!app.is_active ? 'disabled' : ''} onclick="deactivateApp('${appId}')">Deactivate App</button>
+        <p class="hint">Deactivating revokes both keys immediately and blocks all further API calls for this App. There is no reactivate — this mirrors the API.</p>
+      </div>
+    `;
+    openModal('manage-modal');
+  }
+
+  async function rotateKey(appId, keyEnv) {
+    try {
+      const result = await adminApi('rotate_api_key', { app_id: appId, key_env: keyEnv });
+      closeModal('manage-modal');
+      showKeys('Rotated ' + keyEnv + ' Key', [{ label: keyEnv + ' API Key', value: result.api_key }]);
+      loadApps();
+    } catch (e) { alert('Rotate failed: ' + e.message); }
+  }
+
+  async function revokeKey(appId, keyEnv) {
+    if (!confirm('Revoke the ' + keyEnv + ' key? Any client using it will start getting 401s immediately.')) return;
+    try {
+      await adminApi('revoke_api_key', { app_id: appId, key_env: keyEnv });
+      closeModal('manage-modal');
+      loadApps();
+    } catch (e) { alert('Revoke failed: ' + e.message); }
+  }
+
+  async function deactivateApp(appId) {
+    if (!confirm('Deactivate this App? Both keys stop working immediately and cannot be un-revoked.')) return;
+    try {
+      await adminApi('deactivate_app', { app_id: appId });
+      closeModal('manage-modal');
+      loadApps();
+    } catch (e) { alert('Deactivate failed: ' + e.message); }
+  }
+
+  loadApps();
+</script>
+</body>
+</html>

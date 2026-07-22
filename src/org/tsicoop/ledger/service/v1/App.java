@@ -6,6 +6,7 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.tsicoop.ledger.framework.Action;
 import org.tsicoop.ledger.framework.InputProcessor;
+import org.tsicoop.ledger.framework.JWTUtil;
 import org.tsicoop.ledger.framework.OutputProcessor;
 import org.tsicoop.ledger.framework.PoolDB;
 
@@ -37,6 +38,8 @@ public class App implements Action {
                 case "rotate_api_key": handleRotateApiKey(input, res, req); break;
                 case "revoke_api_key": handleRevokeApiKey(input, res, req); break;
                 case "deactivate_app": handleDeactivateApp(input, res, req); break;
+                case "admin_login": handleAdminLogin(res); break;
+                case "admin_logout": handleAdminLogout(res); break;
                 default:
                     OutputProcessor.errorResponse(res, 400, "Bad Request", "Unknown function: " + func, req.getRequestURI());
             }
@@ -227,6 +230,34 @@ public class App implements Action {
         } finally {
             if (pool != null) pool.cleanup(rs, pstmt, conn);
         }
+    }
+
+    /**
+     * Issues the Ops Console session cookie. Reachable only once the caller
+     * has already cleared InterceptingFilter's admin check for this path
+     * (X-Admin-Key == ADMIN_MASTER_KEY) — this just trades that one-time
+     * proof for a cookie so the console doesn't resend the master key on
+     * every subsequent call. Max-Age mirrors JWTUtil's own 10-hour expiry;
+     * the cookie is a UX convenience, JWTUtil.isTokenValid is what's actually
+     * enforced server-side regardless of what the browser does with it.
+     */
+    private void handleAdminLogin(HttpServletResponse res) {
+        String token = JWTUtil.generateAdminToken();
+        boolean secure = !"local".equals(System.getenv("TSI_LEDGER_ENV"));
+        res.addHeader("Set-Cookie", InputProcessor.ADMIN_SESSION_COOKIE + "=" + token
+                + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=36000" + (secure ? "; Secure" : ""));
+        JSONObject output = new JSONObject();
+        output.put("authenticated", true);
+        OutputProcessor.send(res, 200, output);
+    }
+
+    private void handleAdminLogout(HttpServletResponse res) {
+        boolean secure = !"local".equals(System.getenv("TSI_LEDGER_ENV"));
+        res.addHeader("Set-Cookie", InputProcessor.ADMIN_SESSION_COOKIE + "=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
+                + (secure ? "; Secure" : ""));
+        JSONObject output = new JSONObject();
+        output.put("authenticated", false);
+        OutputProcessor.send(res, 200, output);
     }
 
     private String fetchExistingHash(Connection conn, UUID appId, String column) throws SQLException {

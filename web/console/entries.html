@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Journal Entries — TSI Ledger Ops Console</title>
+  <link rel="stylesheet" href="assets/console.css">
+</head>
+<body>
+<script src="assets/console.js"></script>
+<script>
+  const content = renderShell('entries', 'Journal Entries', 'Post balanced double-entry transactions and browse the ledger for one tenant App.');
+  content.innerHTML = `<div id="tenant-bar"></div><div id="entries-app" style="display:none"></div>`;
+
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-overlay" id="view-modal">
+      <div class="modal">
+        <h2>Entry Detail</h2>
+        <pre id="view-modal-body" class="mono" style="white-space:pre-wrap"></pre>
+        <div class="modal-actions"><button onclick="closeModal('view-modal')">Close</button></div>
+      </div>
+    </div>
+  `);
+  function closeModal(id) { qs(id).classList.remove('open'); }
+
+  let accountsCache = [];
+  let lineSeq = 0;
+  let offset = 0;
+  const PAGE_SIZE = 25;
+
+  function genIdempotencyKey() {
+    return (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+      : 'ik-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+  }
+
+  function init() {
+    const app = qs('entries-app');
+    app.style.display = 'block';
+    app.innerHTML = `
+      <div class="card">
+        <h2>Post Entry</h2>
+        <div id="post-result"></div>
+        <form id="post-form">
+          <div class="field-row">
+            <div class="field">
+              <label for="e-reference">Reference ID</label>
+              <input id="e-reference" required maxlength="128" placeholder="TXN-2026-8891">
+            </div>
+            <div class="field">
+              <label for="e-posted-at">Posted At</label>
+              <input id="e-posted-at" type="datetime-local" required>
+            </div>
+            <div class="field">
+              <label for="e-idempotency">Idempotency-Key</label>
+              <div style="display:flex;gap:6px">
+                <input id="e-idempotency" required style="flex:1">
+                <button type="button" class="small" id="e-idem-regen" title="Generate a new key">&#8635;</button>
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <label for="e-description">Description</label>
+            <input id="e-description" required maxlength="500" placeholder="Enterprise Subscription Settlement - Invoice #451">
+          </div>
+
+          <label>Lines</label>
+          <div id="lines-container" class="entry-lines-editor"></div>
+          <button type="button" class="small" id="add-line-btn">+ Add Line</button>
+
+          <div id="balance-check" class="balance-check"></div>
+
+          <div style="margin-top:16px">
+            <button type="submit" class="primary" id="post-submit-btn">Post Entry</button>
+          </div>
+        </form>
+        <p class="hint" id="no-accounts-hint" style="display:none">
+          No active accounts yet — create some on the <a href="accounts.html">Chart of Accounts</a> page first.
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>
+          Recent Entries
+          <button class="small" id="refresh-entries-btn">Refresh</button>
+        </h2>
+        <div id="entries-error"></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Seq</th><th>Reference</th><th>Description</th><th>Posted At</th><th>Block Hash</th><th></th></tr></thead>
+            <tbody id="entries-body"><tr class="empty-row"><td colspan="6">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div style="text-align:center;margin-top:12px">
+          <button class="small" id="load-more-btn" style="display:none">Load More</button>
+        </div>
+      </div>
+    `;
+
+    qs('e-idempotency').value = genIdempotencyKey();
+    qs('e-idem-regen').addEventListener('click', () => { qs('e-idempotency').value = genIdempotencyKey(); });
+    // datetime-local wants local time, not UTC — offset before slicing or "now" shows wrong by the browser's UTC offset.
+    const now = new Date();
+    qs('e-posted-at').value = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+    qs('add-line-btn').addEventListener('click', () => addLine());
+    qs('post-form').addEventListener('submit', submitEntry);
+    qs('refresh-entries-btn').addEventListener('click', () => { offset = 0; loadEntries(); });
+    qs('load-more-btn').addEventListener('click', () => { offset += PAGE_SIZE; loadEntries(true); });
+
+    loadAccountsThenSeedLines();
+    loadEntries();
+  }
+
+  async function loadAccountsThenSeedLines() {
+    try {
+      accountsCache = await tenantApi('/api/v1/accounts', 'list_accounts', {});
+    } catch (e) {
+      accountsCache = [];
+    }
+    if (accountsCache.length === 0) {
+      qs('no-accounts-hint').style.display = 'block';
+      qs('post-submit-btn').disabled = true;
+    } else {
+      addLine('DEBIT');
+      addLine('CREDIT');
+    }
+  }
+
+  function addLine(defaultType) {
+    lineSeq++;
+    const id = 'line-' + lineSeq;
+    const options = accountsCache.map(a => `<option value="${esc(a.account_code)}">${esc(a.account_code)} — ${esc(a.account_name)}</option>`).join('');
+    qs('lines-container').insertAdjacentHTML('beforeend', `
+      <div class="line-row" id="${id}">
+        <div><label>Account</label><select class="line-account">${options}</select></div>
+        <div><label>Type</label>
+          <select class="line-type">
+            <option value="DEBIT" ${defaultType === 'DEBIT' ? 'selected' : ''}>DEBIT</option>
+            <option value="CREDIT" ${defaultType === 'CREDIT' ? 'selected' : ''}>CREDIT</option>
+          </select>
+        </div>
+        <div><label>Amount</label><input type="number" class="line-amount" step="0.0001" min="0.0001" value="0.00"></div>
+        <div><button type="button" class="small line-remove" title="Remove line">&times;</button></div>
+      </div>`);
+    qs(id).querySelector('.line-remove').addEventListener('click', () => { qs(id).remove(); recalcBalance(); });
+    qs(id).querySelectorAll('.line-amount, .line-type').forEach(el => el.addEventListener('input', recalcBalance));
+    recalcBalance();
+  }
+
+  function recalcBalance() {
+    const rows = Array.from(document.querySelectorAll('#lines-container .line-row'));
+    let debit = 0, credit = 0;
+    rows.forEach(r => {
+      const amt = parseFloat(r.querySelector('.line-amount').value) || 0;
+      const type = r.querySelector('.line-type').value;
+      if (type === 'DEBIT') debit += amt; else credit += amt;
+    });
+    // Disable "remove" once only two lines remain — post_entry requires at least two.
+    rows.forEach(r => { r.querySelector('.line-remove').disabled = rows.length <= 2; });
+
+    const box = qs('balance-check');
+    const balanced = rows.length >= 2 && Math.abs(debit - credit) < 1e-9;
+    box.className = 'balance-check ' + (balanced ? 'ok' : 'bad');
+    box.textContent = `Debits ${fmtAmount(debit)}  —  Credits ${fmtAmount(credit)}  —  ${balanced ? 'Balanced ✓' : 'Not balanced'}`;
+    qs('post-submit-btn').disabled = !balanced;
+    return balanced;
+  }
+
+  async function submitEntry(e) {
+    e.preventDefault();
+    if (!recalcBalance()) return;
+
+    const rows = Array.from(document.querySelectorAll('#lines-container .line-row'));
+    const lines = rows.map(r => ({
+      account_code: r.querySelector('.line-account').value,
+      type: r.querySelector('.line-type').value,
+      amount: parseFloat(r.querySelector('.line-amount').value)
+    }));
+
+    const postedAtLocal = qs('e-posted-at').value;
+    const postedAtIso = postedAtLocal ? new Date(postedAtLocal).toISOString() : null;
+    const idempotencyKey = qs('e-idempotency').value.trim();
+
+    const resultBox = qs('post-result');
+    resultBox.innerHTML = '';
+    const btn = qs('post-submit-btn');
+    btn.disabled = true; btn.textContent = 'Posting…';
+
+    try {
+      const entry = await tenantApi('/api/v1/ledger', 'post_entry', {
+        reference_id: qs('e-reference').value.trim(),
+        description: qs('e-description').value.trim(),
+        posted_at: postedAtIso,
+        lines: lines
+      }, { 'Idempotency-Key': idempotencyKey });
+
+      resultBox.innerHTML = `<div class="alert success">
+        Posted as sequence #${entry.sequence_number}${entry.idempotent_replay ? ' (idempotent replay of an existing entry)' : ''}.
+        block_hash: <code>${esc(shortId(entry.block_hash))}</code>
+      </div>`;
+
+      qs('e-reference').value = '';
+      qs('e-description').value = '';
+      qs('e-idempotency').value = genIdempotencyKey();
+      offset = 0;
+      loadEntries();
+    } catch (err) {
+      if (err instanceof TenantAuthError) { resultBox.innerHTML = tenantAuthErrorHtml(); return; }
+      resultBox.innerHTML = `<div class="alert error">${esc(err.message)}</div>`;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Post Entry';
+      recalcBalance();
+    }
+  }
+
+  async function loadEntries(append) {
+    const body = qs('entries-body');
+    const errBox = qs('entries-error');
+    errBox.innerHTML = '';
+    if (!append) body.innerHTML = '<tr class="empty-row"><td colspan="6">Loading…</td></tr>';
+    try {
+      const result = await tenantApi('/api/v1/ledger', 'list_entries', { limit: PAGE_SIZE, offset: offset });
+      const rowsHtml = result.entries.map(e => `
+        <tr>
+          <td>${e.sequence_number}</td>
+          <td>${esc(e.reference_id)}</td>
+          <td>${esc(e.description)}</td>
+          <td>${fmtDate(e.posted_at)}</td>
+          <td><code title="${esc(e.block_hash)}">${shortId(e.block_hash)}</code></td>
+          <td><button class="small" onclick='viewEntry(${JSON.stringify(e.id)})'>View</button></td>
+        </tr>`).join('');
+
+      if (!append) {
+        body.innerHTML = result.entries.length === 0 ? '<tr class="empty-row"><td colspan="6">No entries posted yet.</td></tr>' : rowsHtml;
+      } else {
+        body.insertAdjacentHTML('beforeend', rowsHtml);
+      }
+      qs('load-more-btn').style.display = result.count === PAGE_SIZE ? 'inline-flex' : 'none';
+    } catch (e) {
+      if (e instanceof TenantAuthError) { errBox.innerHTML = tenantAuthErrorHtml(); if (!append) body.innerHTML = ''; return; }
+      errBox.innerHTML = `<div class="alert error">${esc(e.message)}</div>`;
+    }
+  }
+
+  async function viewEntry(id) {
+    try {
+      const entry = await tenantApi('/api/v1/ledger', 'get_entry', { entry_id: id });
+      qs('view-modal-body').textContent = JSON.stringify(entry, null, 2);
+      qs('view-modal').classList.add('open');
+    } catch (e) { alert('Failed to load entry: ' + e.message); }
+  }
+
+  renderTenantKeyBar('tenant-bar', init);
+</script>
+</body>
+</html>

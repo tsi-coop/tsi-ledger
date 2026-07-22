@@ -31,12 +31,19 @@ public class InterceptingFilter implements Filter {
     private boolean isOriginAllowed(HttpServletRequest req) {
         String origin = req.getHeader("Origin");
         if (origin == null) return true;
+        return matchAllowedOrigin(origin) != null;
+    }
+
+    /** ALLOWED_ORIGINS is a comma-separated allow-list; Access-Control-Allow-Origin must echo back
+     * exactly the one matched origin (never the raw list — that's not a legal header value and
+     * browsers will reject it, silently breaking CORS for every origin in the list). */
+    private String matchAllowedOrigin(String origin) {
         String allowedOrigins = System.getenv("ALLOWED_ORIGINS");
-        if (allowedOrigins == null || allowedOrigins.trim().isEmpty()) return false;
+        if (allowedOrigins == null || allowedOrigins.trim().isEmpty()) return null;
         for (String allowed : allowedOrigins.split(",")) {
-            if (allowed.trim().equalsIgnoreCase(origin)) return true;
+            if (allowed.trim().equalsIgnoreCase(origin)) return allowed.trim();
         }
-        return false;
+        return null;
     }
 
     @Override
@@ -46,9 +53,11 @@ public class InterceptingFilter implements Filter {
         String method = req.getMethod();
         String uri = req.getRequestURI();
 
-        String allowedOrigin = System.getenv("ALLOWED_ORIGINS");
-        if (allowedOrigin != null && !allowedOrigin.trim().isEmpty()) {
-            res.setHeader("Access-Control-Allow-Origin", allowedOrigin.trim());
+        String requestOrigin = req.getHeader("Origin");
+        String matchedOrigin = requestOrigin != null ? matchAllowedOrigin(requestOrigin) : null;
+        if (matchedOrigin != null) {
+            res.setHeader("Access-Control-Allow-Origin", matchedOrigin);
+            res.setHeader("Vary", "Origin");
         }
         res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
         res.setHeader("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-API-Key, X-Admin-Key, Idempotency-Key");
@@ -112,7 +121,7 @@ public class InterceptingFilter implements Filter {
 
             boolean authenticated;
             if (ADMIN_PATH.equalsIgnoreCase(servletPath)) {
-                authenticated = InputProcessor.isValidAdminRequest(req);
+                authenticated = InputProcessor.isValidAdminRequest(req) || InputProcessor.isValidAdminSession(req);
             } else {
                 authenticated = InputProcessor.resolveTenantApp(req);
             }

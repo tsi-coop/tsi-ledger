@@ -37,6 +37,9 @@ public class InputProcessor {
     private static final String ADMIN_KEY_HEADER = "X-Admin-Key";
     private static final String API_KEY_HEADER = "X-API-Key";
 
+    /** Ops Console session cookie set by App's admin_login — see InputProcessor.isValidAdminSession. */
+    public static final String ADMIN_SESSION_COOKIE = "tsi_ledger_admin_session";
+
     private static final long TENANT_CACHE_TTL_MS = 60_000L;
 
     private static class CachedApp {
@@ -218,5 +221,21 @@ public class InputProcessor {
 
     public static UUID getAppId(HttpServletRequest req) {
         return (UUID) req.getAttribute(APP_ID_ATTR);
+    }
+
+    /**
+     * Alternative to isValidAdminRequest for the Ops Console: a valid JWT
+     * session cookie (issued by App's admin_login, which itself required
+     * X-Admin-Key once) stands in for resending the master key on every call.
+     */
+    public static boolean isValidAdminSession(HttpServletRequest req) {
+        jakarta.servlet.http.Cookie[] cookies = req.getCookies();
+        if (cookies == null) return false;
+        for (jakarta.servlet.http.Cookie cookie : cookies) {
+            if (ADMIN_SESSION_COOKIE.equals(cookie.getName())) {
+                return JWTUtil.isTokenValid(cookie.getValue());
+            }
+        }
+        return false;
     }
 }

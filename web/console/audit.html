@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audit Verification — TSI Ledger Ops Console</title>
+  <link rel="stylesheet" href="assets/console.css">
+</head>
+<body>
+<script src="assets/console.js"></script>
+<script>
+  const content = renderShell('audit', 'Audit Verification', 'Recompute the SHA-256 hash chain for one tenant App and confirm nothing was altered out-of-band.');
+  content.innerHTML = `<div id="tenant-bar"></div><div id="audit-app" style="display:none"></div>`;
+
+  function init() {
+    const app = qs('audit-app');
+    app.style.display = 'block';
+    app.innerHTML = `
+      <div class="card">
+        <h2>
+          Hash Chain Verification
+          <button class="primary" id="run-btn">Run Verification</button>
+        </h2>
+        <p class="page-sub">Walks every journal entry for this App in sequence order, recomputes each block's
+          hash from the currently stored data, and compares it to what was recorded at post time. Stops at the
+          first mismatch — a tamper-evident chain only vouches for the entries before the break.</p>
+        <div id="audit-result"><p class="muted">Run verification to see results.</p></div>
+      </div>
+    `;
+    qs('run-btn').addEventListener('click', runVerify);
+  }
+
+  async function runVerify() {
+    const btn = qs('run-btn');
+    const box = qs('audit-result');
+    btn.disabled = true; btn.textContent = 'Verifying…';
+    box.innerHTML = '<p class="spinner">Recomputing hash chain…</p>';
+    try {
+      const result = await tenantApi('/api/v1/audit', 'verify_audit', {});
+      if (result.valid) {
+        box.innerHTML = `
+          <div class="alert success">Chain valid — no tampering detected.</div>
+          <div class="stat-grid">
+            <div class="stat-card ok"><div class="label">Entries Verified</div><div class="value">${result.entries_verified}</div></div>
+            <div class="stat-card"><div class="label">Total Entries</div><div class="value">${result.total_entries}</div></div>
+          </div>
+          <p class="hint">Last block hash: <code>${esc(result.last_block_hash)}</code></p>
+        `;
+      } else {
+        const b = result.breach;
+        box.innerHTML = `
+          <div class="alert error"><strong>Tamper detected</strong> at sequence_number ${b.sequence_number} —
+            reason: <code>${esc(b.reason)}</code></div>
+          <div class="stat-grid">
+            <div class="stat-card ok"><div class="label">Entries Verified Before Breach</div><div class="value">${result.entries_verified}</div></div>
+            <div class="stat-card bad"><div class="label">Breach Sequence</div><div class="value">${b.sequence_number}</div></div>
+            <div class="stat-card"><div class="label">Total Entries</div><div class="value">${result.total_entries}</div></div>
+          </div>
+          <p>${esc(b.message)}</p>
+          <pre class="mono" style="white-space:pre-wrap;background:#f8fafc;padding:12px;border-radius:8px">${esc(JSON.stringify(b.details, null, 2))}</pre>
+        `;
+      }
+    } catch (e) {
+      if (e instanceof TenantAuthError) { box.innerHTML = tenantAuthErrorHtml(); return; }
+      box.innerHTML = `<div class="alert error">${esc(e.message)}</div>`;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Run Verification';
+    }
+  }
+
+  renderTenantKeyBar('tenant-bar', init);
+</script>
+</body>
+</html>

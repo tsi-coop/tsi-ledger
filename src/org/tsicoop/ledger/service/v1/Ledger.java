@@ -54,6 +54,8 @@ public class Ledger implements Action {
 
             switch (func.toLowerCase()) {
                 case "post_entry": handlePostEntry(input, res, req); break;
+                case "list_entries": handleListEntries(input, res, req); break;
+                case "get_entry": handleGetEntry(input, res, req); break;
                 default:
                     OutputProcessor.errorResponse(res, 400, "Bad Request", "Unknown function: " + func, req.getRequestURI());
             }
@@ -171,6 +173,106 @@ public class Ledger implements Action {
         } finally {
             if (pool != null) pool.cleanup(null, null, conn);
         }
+    }
+
+    /** Tenant-facing browse for the Ops Console (entries.html) — post_entry is the only write path; these are read-only. */
+    private void handleListEntries(JSONObject input, HttpServletResponse res, HttpServletRequest req) throws SQLException {
+        UUID appId = InputProcessor.getAppId(req);
+
+        long limit = clamp(toLong(input.get("limit"), 50L), 1L, 200L);
+        long offset = Math.max(0L, toLong(input.get("offset"), 0L));
+
+        PoolDB pool = null; Connection conn = null;
+        try {
+            pool = new PoolDB();
+            conn = pool.getConnection();
+
+            JSONArray entries = new JSONArray();
+            try (PreparedStatement pstmt = conn.prepareStatement(
+                    "SELECT id, sequence_number, reference_id, description, posted_at, block_hash, created_at " +
+                    "FROM journal_entries WHERE app_id = ? ORDER BY sequence_number DESC LIMIT ? OFFSET ?")) {
+                pstmt.setObject(1, appId);
+                pstmt.setLong(2, limit);
+                pstmt.setLong(3, offset);
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    while (rs.next()) {
+                        JSONObject row = new JSONObject();
+                        row.put("id", rs.getString("id"));
+                        row.put("sequence_number", rs.getLong("sequence_number"));
+                        row.put("reference_id", rs.getString("reference_id"));
+                        row.put("description", rs.getString("description"));
+                        row.put("posted_at", rs.getTimestamp("posted_at").toInstant().toString());
+                        row.put("block_hash", rs.getString("block_hash"));
+                        row.put("created_at", rs.getTimestamp("created_at").toInstant().toString());
+                        entries.add(row);
+                    }
+                }
+            }
+
+            JSONObject output = new JSONObject();
+            output.put("entries", entries);
+            output.put("limit", limit);
+            output.put("offset", offset);
+            output.put("count", entries.size());
+            OutputProcessor.send(res, 200, output);
+        } finally {
+            if (pool != null) pool.cleanup(null, null, conn);
+        }
+    }
+
+    private void handleGetEntry(JSONObject input, HttpServletResponse res, HttpServletRequest req) throws SQLException {
+        UUID appId = InputProcessor.getAppId(req);
+        UUID entryId;
+        try {
+            entryId = UUID.fromString((String) input.get("entry_id"));
+        } catch (IllegalArgumentException e) {
+            OutputProcessor.errorResponse(res, 400, "Bad Request", "entry_id must be a UUID.", req.getRequestURI());
+            return;
+        }
+
+        PoolDB pool = null; Connection conn = null;
+        try {
+            pool = new PoolDB();
+            conn = pool.getConnection();
+            try (PreparedStatement pstmt = conn.prepareStatement(
+                    "SELECT id, sequence_number, reference_id, description, posted_at, idempotency_key, " +
+                    "entry_payload_hash, previous_block_hash, block_hash, created_at " +
+                    "FROM journal_entries WHERE id = ? AND app_id = ?")) {
+                pstmt.setObject(1, entryId);
+                pstmt.setObject(2, appId);
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (!rs.next()) {
+                        OutputProcessor.errorResponse(res, 404, "Not Found", "Entry not found.", req.getRequestURI());
+                        return;
+                    }
+                    JSONObject output = new JSONObject();
+                    output.put("id", rs.getString("id"));
+                    output.put("sequence_number", rs.getLong("sequence_number"));
+                    output.put("reference_id", rs.getString("reference_id"));
+                    output.put("description", rs.getString("description"));
+                    output.put("posted_at", rs.getTimestamp("posted_at").toInstant().toString());
+                    output.put("idempotency_key", rs.getString("idempotency_key"));
+                    output.put("entry_payload_hash", rs.getString("entry_payload_hash"));
+                    output.put("previous_block_hash", rs.getString("previous_block_hash"));
+                    output.put("block_hash", rs.getString("block_hash"));
+                    output.put("created_at", rs.getTimestamp("created_at").toInstant().toString());
+                    output.put("lines", fetchLinesJson(conn, entryId));
+                    OutputProcessor.send(res, 200, output);
+                }
+            }
+        } finally {
+            if (pool != null) pool.cleanup(null, null, conn);
+        }
+    }
+
+    private static long toLong(Object raw, long fallback) {
+        if (raw instanceof Long) return (Long) raw;
+        if (raw instanceof Number) return ((Number) raw).longValue();
+        return fallback;
+    }
+
+    private static long clamp(long value, long min, long max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     /** Returns null (and has already sent the error response) if any code is unknown or inactive for this app. */

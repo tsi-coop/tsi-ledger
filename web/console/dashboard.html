@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — TSI Ledger Ops Console</title>
+  <link rel="stylesheet" href="assets/console.css">
+</head>
+<body>
+<script src="assets/console.js"></script>
+<script>
+  const content = renderShell('dashboard', 'Dashboard', 'Tenant provisioning overview.');
+
+  content.innerHTML = `
+    <div class="stat-grid" id="stat-grid">
+      <div class="stat-card"><div class="label">Total Apps</div><div class="value" id="stat-total">—</div></div>
+      <div class="stat-card ok"><div class="label">Active Apps</div><div class="value" id="stat-active">—</div></div>
+      <div class="stat-card"><div class="label">Live Keys Issued</div><div class="value" id="stat-live">—</div></div>
+      <div class="stat-card"><div class="label">Test Keys Issued</div><div class="value" id="stat-test">—</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Getting Started</h2>
+      <p>The console has two separate credential realms, matching the API exactly:</p>
+      <ol>
+        <li><strong>Admin session</strong> (what you just logged into) — provisions Apps and their API keys on
+          the <a href="apps.html">Apps</a> page. Nothing more; there's no operator/role system.</li>
+        <li><strong>Tenant API key</strong> — browsing a specific App's <a href="accounts.html">chart of accounts</a>,
+          <a href="entries.html">journal entries</a>, <a href="audit.html">audit chain</a>, or
+          <a href="reports.html">reports</a> requires that App's own live or test key. Admin sessions can't retrieve
+          it after the fact — keys are shown exactly once, at creation or rotation, by design. Paste it in on those
+          pages when prompted; it's held only in this browser tab for the session.</li>
+      </ol>
+    </div>
+
+    <div class="card">
+      <h2>Recent Apps</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>App Name</th><th>Status</th><th>Keys</th><th>Created</th></tr></thead>
+          <tbody id="recent-apps-body"><tr class="empty-row"><td colspan="4">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  async function load() {
+    try {
+      const apps = await adminApi('list_apps');
+      const total = apps.length;
+      const active = apps.filter(a => a.is_active).length;
+      const live = apps.filter(a => a.has_live_key).length;
+      const test = apps.filter(a => a.has_test_key).length;
+      qs('stat-total').textContent = total;
+      qs('stat-active').textContent = active;
+      qs('stat-live').textContent = live;
+      qs('stat-test').textContent = test;
+
+      const recent = apps.slice(0, 8);
+      qs('recent-apps-body').innerHTML = recent.length === 0
+        ? '<tr class="empty-row"><td colspan="4">No Apps yet. Create one on the Apps page.</td></tr>'
+        : recent.map(a => `
+          <tr>
+            <td>${esc(a.app_name)}</td>
+            <td>${a.is_active ? '<span class="badge green">Active</span>' : '<span class="badge red">Inactive</span>'}</td>
+            <td>${a.has_live_key ? '<span class="badge blue">Live</span> ' : ''}${a.has_test_key ? '<span class="badge gray">Test</span>' : ''}</td>
+            <td>${fmtDate(a.created_at)}</td>
+          </tr>`).join('');
+    } catch (e) {
+      qs('recent-apps-body').innerHTML = `<tr class="empty-row"><td colspan="4">${esc(e.message)}</td></tr>`;
+    }
+  }
+
+  load();
+</script>
+</body>
+</html>
