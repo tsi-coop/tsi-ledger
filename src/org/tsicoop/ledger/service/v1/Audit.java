@@ -42,7 +42,7 @@ public class Audit implements Action {
             String func = (String) input.get("_func");
 
             switch (func.toLowerCase()) {
-                case "verify_audit": handleVerifyAudit(res, req); break;
+                case "verify_audit": handleVerifyAudit(input, res, req); break;
                 default:
                     OutputProcessor.errorResponse(res, 400, "Bad Request", "Unknown function: " + func, req.getRequestURI());
             }
@@ -67,8 +67,19 @@ public class Audit implements Action {
         String blockHash;
     }
 
-    private void handleVerifyAudit(HttpServletResponse res, HttpServletRequest req) throws SQLException {
+    /** Tenant call: verifies the calling App's own chain. Console call: the chain is still
+     * per-app, so the caller (Admin or Operator) picks which App's chain to verify via app_id —
+     * "verify everything" is "loop the app list" client-side, not a single org-wide query. */
+    private void handleVerifyAudit(JSONObject input, HttpServletResponse res, HttpServletRequest req) throws SQLException {
         UUID appId = InputProcessor.getAppId(req);
+        if (appId == null) {
+            try {
+                appId = UUID.fromString((String) input.get("app_id"));
+            } catch (Exception e) {
+                OutputProcessor.errorResponse(res, 400, "Bad Request", "app_id is required.", req.getRequestURI());
+                return;
+            }
+        }
 
         PoolDB pool = null;
         Connection conn = null;
@@ -99,7 +110,7 @@ public class Audit implements Action {
                     output.put("valid", false);
                     output.put("entries_verified", verified);
                     output.put("breach", breach(expectedSequence, "sequence_gap",
-                            "Expected sequence_number " + expectedSequence + " but found " + entry.sequenceNumber + " — an entry is missing or out of order.",
+                            "Expected sequence_number " + expectedSequence + " but found " + entry.sequenceNumber + " - an entry is missing or out of order.",
                             "expected_sequence_number", String.valueOf(expectedSequence),
                             "found_sequence_number", String.valueOf(entry.sequenceNumber)));
                     OutputProcessor.send(res, 200, output);
@@ -124,7 +135,7 @@ public class Audit implements Action {
                     output.put("valid", false);
                     output.put("entries_verified", verified);
                     output.put("breach", breach(entry.sequenceNumber, "payload_hash_mismatch",
-                            "Recomputed entry_payload_hash does not match the stored value — the entry's metadata or lines were altered out-of-band.",
+                            "Recomputed entry_payload_hash does not match the stored value - the entry's metadata or lines were altered out-of-band.",
                             "expected", recomputedPayloadHash, "stored", entry.entryPayloadHash));
                     OutputProcessor.send(res, 200, output);
                     return;

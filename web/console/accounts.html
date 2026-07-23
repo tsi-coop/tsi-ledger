@@ -3,32 +3,37 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chart of Accounts — TSI Ledger Ops Console</title>
+  <title>Chart of Accounts - TSI Ledger Ops Console</title>
   <link rel="stylesheet" href="assets/console.css">
 </head>
 <body>
 <script src="assets/console.js"></script>
 <script>
-  const content = renderShell('accounts', 'Chart of Accounts', 'Browse and create accounts for one tenant App.');
-  content.innerHTML = `<div id="tenant-bar"></div><div id="accounts-app" style="display:none"></div>`;
+  const content = renderShell('accounts', 'Chart of Accounts', 'One shared chart of accounts for the whole organization - every App posts against these same accounts.');
+  content.innerHTML = `<div id="accounts-app"></div>`;
 
   document.body.insertAdjacentHTML('beforeend', `
     <div class="modal-overlay" id="view-modal">
       <div class="modal">
         <h2>Account</h2>
         <pre id="view-modal-body" class="mono" style="white-space:pre-wrap"></pre>
-        <div class="modal-actions"><button onclick="closeModal('view-modal')">Close</button></div>
+        <div class="modal-actions">
+          <button class="danger" id="view-deactivate-btn" style="display:none">Deactivate</button>
+          <button onclick="closeModal('view-modal')">Close</button>
+        </div>
       </div>
     </div>
   `);
   function closeModal(id) { qs(id).classList.remove('open'); }
 
   const ACCOUNT_TYPES = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'];
+  let viewingAccountId = null;
 
-  function init() {
+  async function init() {
     const app = qs('accounts-app');
-    app.style.display = 'block';
+    const admin = isAdmin();
     app.innerHTML = `
+      ${admin ? `
       <div class="card">
         <h2>New Account</h2>
         <form id="create-form">
@@ -49,7 +54,7 @@
           <button type="submit" class="primary">Create Account</button>
           <span id="create-msg"></span>
         </form>
-      </div>
+      </div>` : ''}
 
       <div class="card">
         <h2>
@@ -74,22 +79,24 @@
       </div>
     `;
 
-    qs('create-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const msg = qs('create-msg');
-      msg.textContent = '';
-      try {
-        await tenantApi('/api/v1/accounts', 'create_account', {
-          account_code: qs('acct-code').value.trim(),
-          account_name: qs('acct-name').value.trim(),
-          account_type: qs('acct-type').value
-        });
-        qs('acct-code').value = ''; qs('acct-name').value = '';
-        loadAccounts();
-      } catch (err) {
-        msg.innerHTML = `<span style="color:var(--danger)">${esc(err.message)}</span>`;
-      }
-    });
+    if (admin) {
+      qs('create-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const msg = qs('create-msg');
+        msg.textContent = '';
+        try {
+          await consoleApi('/api/v1/accounts', 'create_account', {
+            account_code: qs('acct-code').value.trim(),
+            account_name: qs('acct-name').value.trim(),
+            account_type: qs('acct-type').value
+          });
+          qs('acct-code').value = ''; qs('acct-name').value = '';
+          loadAccounts();
+        } catch (err) {
+          msg.innerHTML = `<span style="color:var(--danger)">${esc(err.message)}</span>`;
+        }
+      });
+    }
 
     qs('filter-type').addEventListener('change', loadAccounts);
     qs('filter-inactive').addEventListener('change', loadAccounts);
@@ -108,7 +115,7 @@
       const params = {};
       if (type) params.account_type = type;
       if (includeInactive) params.include_inactive = true;
-      const accounts = await tenantApi('/api/v1/accounts', 'list_accounts', params);
+      const accounts = await consoleApi('/api/v1/accounts', 'list_accounts', params);
       body.innerHTML = accounts.length === 0
         ? '<tr class="empty-row"><td colspan="6">No accounts match.</td></tr>'
         : accounts.map(a => `
@@ -121,7 +128,6 @@
             <td><button class="small" onclick='viewAccount(${JSON.stringify(a.id)})'>View</button></td>
           </tr>`).join('');
     } catch (e) {
-      if (e instanceof TenantAuthError) { errBox.innerHTML = tenantAuthErrorHtml(); body.innerHTML = ''; return; }
       errBox.innerHTML = `<div class="alert error">${esc(e.message)}</div>`;
       body.innerHTML = '';
     }
@@ -129,13 +135,30 @@
 
   async function viewAccount(id) {
     try {
-      const account = await tenantApi('/api/v1/accounts', 'get_account', { account_id: id });
+      const account = await consoleApi('/api/v1/accounts', 'get_account', { account_id: id });
+      viewingAccountId = id;
       qs('view-modal-body').textContent = JSON.stringify(account, null, 2);
+      const deactivateBtn = qs('view-deactivate-btn');
+      if (isAdmin() && account.is_active) {
+        deactivateBtn.style.display = 'inline-flex';
+        deactivateBtn.onclick = () => deactivateAccount(id);
+      } else {
+        deactivateBtn.style.display = 'none';
+      }
       qs('view-modal').classList.add('open');
     } catch (e) { alert('Failed to load account: ' + e.message); }
   }
 
-  renderTenantKeyBar('tenant-bar', init);
+  async function deactivateAccount(id) {
+    if (!confirm('Deactivate this account? Apps will no longer be able to post new entries against it.')) return;
+    try {
+      await consoleApi('/api/v1/accounts', 'deactivate_account', { account_id: id });
+      closeModal('view-modal');
+      loadAccounts();
+    } catch (e) { alert('Deactivate failed: ' + e.message); }
+  }
+
+  meReady.then(init);
 </script>
 </body>
 </html>

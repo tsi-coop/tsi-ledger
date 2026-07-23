@@ -1,0 +1,10 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "_func": { "type": "string" },
+    "email": { "type": "string", "minLength": 3, "maxLength": 255 },
+    "password": { "type": "string", "minLength": 1 }
+  },
+  "required": ["_func", "email", "password"]
+}

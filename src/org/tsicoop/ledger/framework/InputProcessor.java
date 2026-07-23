@@ -22,8 +22,10 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Request plumbing shared by every Action: body -> JSON, _func schema
  * validation, and the two auth models the ledger uses:
- *  - Admin (Ops Console + provisioning): a single shared X-Admin-Key compared
- *    against ADMIN_MASTER_KEY. No operator/role system.
+ *  - Console (Ops Console — Users, Apps/API-key provisioning, Chart of
+ *    Accounts writes, org-wide ledger/reports/reversal-approval): a JWT
+ *    session cookie issued by Auth.login, carrying the operator's user_id/
+ *    email/role (see resolveConsoleSession).
  *  - Tenant (App-facing ledger API): X-API-Key hashed with SHA-256 and looked
  *    up directly against apps.api_key_live_hash / api_key_test_hash. This has
  *    to be a deterministic hash (not bcrypt/PasswordHasher) because the FSD
@@ -33,12 +35,13 @@ public class InputProcessor {
     public final static String REQUEST_DATA = "input_json";
     public final static String APP_ID_ATTR = "app_id";
     public final static String KEY_ENV_ATTR = "key_env";
+    public final static String USER_ID_ATTR = "user_id";
+    public final static String USER_ROLE_ATTR = "user_role";
 
-    private static final String ADMIN_KEY_HEADER = "X-Admin-Key";
     private static final String API_KEY_HEADER = "X-API-Key";
 
-    /** Ops Console session cookie set by App's admin_login — see InputProcessor.isValidAdminSession. */
-    public static final String ADMIN_SESSION_COOKIE = "tsi_ledger_admin_session";
+    /** Ops Console session cookie set by Auth.login — see InputProcessor.resolveConsoleSession. */
+    public static final String SESSION_COOKIE = "tsi_ledger_session";
 
     private static final long TENANT_CACHE_TTL_MS = 60_000L;
 
@@ -156,16 +159,6 @@ public class InputProcessor {
         return valid;
     }
 
-    /** Constant-time comparison of X-Admin-Key against ADMIN_MASTER_KEY. */
-    public static boolean isValidAdminRequest(HttpServletRequest req) {
-        String provided = req.getHeader(ADMIN_KEY_HEADER);
-        String expected = System.getenv("ADMIN_MASTER_KEY");
-        if (provided == null || expected == null || expected.trim().isEmpty()) return false;
-        byte[] a = provided.getBytes(StandardCharsets.UTF_8);
-        byte[] b = expected.getBytes(StandardCharsets.UTF_8);
-        return MessageDigest.isEqual(a, b);
-    }
-
     /**
      * Resolves the X-API-Key header to an active app, hashing it and matching
      * against either the live or test key hash. On success sets APP_ID_ATTR /
@@ -224,18 +217,37 @@ public class InputProcessor {
     }
 
     /**
-     * Alternative to isValidAdminRequest for the Ops Console: a valid JWT
-     * session cookie (issued by App's admin_login, which itself required
-     * X-Admin-Key once) stands in for resending the master key on every call.
+     * Validates the Ops Console session cookie (issued by Auth.login) and, on
+     * success, sets USER_ID_ATTR/USER_ROLE_ATTR request attributes — the
+     * console-auth analog of resolveTenantApp.
      */
-    public static boolean isValidAdminSession(HttpServletRequest req) {
+    public static boolean resolveConsoleSession(HttpServletRequest req) {
         jakarta.servlet.http.Cookie[] cookies = req.getCookies();
         if (cookies == null) return false;
         for (jakarta.servlet.http.Cookie cookie : cookies) {
-            if (ADMIN_SESSION_COOKIE.equals(cookie.getName())) {
-                return JWTUtil.isTokenValid(cookie.getValue());
+            if (SESSION_COOKIE.equals(cookie.getName())) {
+                String token = cookie.getValue();
+                if (!JWTUtil.isTokenValid(token)) return false;
+                String userId = JWTUtil.getClaim(token, JWTUtil.CLAIM_USER_ID);
+                String role = JWTUtil.getClaim(token, JWTUtil.CLAIM_ROLE);
+                if (userId == null || role == null) return false;
+                req.setAttribute(USER_ID_ATTR, UUID.fromString(userId));
+                req.setAttribute(USER_ROLE_ATTR, role);
+                return true;
             }
         }
         return false;
+    }
+
+    public static UUID getUserId(HttpServletRequest req) {
+        return (UUID) req.getAttribute(USER_ID_ATTR);
+    }
+
+    public static String getUserRole(HttpServletRequest req) {
+        return (String) req.getAttribute(USER_ROLE_ATTR);
+    }
+
+    public static boolean isAdmin(HttpServletRequest req) {
+        return "ADMIN".equals(getUserRole(req));
     }
 }

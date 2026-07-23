@@ -1,18 +1,12 @@
-/* TSI Ledger — Ops Console shared client helpers.
+/* TSI Ledger - Ops Console shared client helpers.
  *
- * Two separate credential realms, matching the backend exactly (see
- * InterceptingFilter): admin calls (/api/v1/app) ride the JWT session
- * cookie set by admin_login; every other module needs a specific tenant
- * App's API key, which the backend only ever shows once at create/rotate
- * time and never lets an admin session retrieve again. So the console
- * cannot "know" a tenant's key — the operator pastes it in, it's held in
- * sessionStorage (cleared when the tab closes), and it's sent as
- * X-API-Key only from the browser directly. There is no server-side
- * tenant session; this is not a workaround, it's the same model the API
- * itself uses.
+ * One credential realm: an email/password login (Auth.login) issues a
+ * session cookie good for every console call (Users, Apps/API-key
+ * provisioning, Chart of Accounts, org-wide ledger browsing, reversal
+ * request/approve, reports, raw export). No console page ever asks for or
+ * holds an API key - Apps authenticate to the API directly with their own
+ * X-API-Key, server-to-server, never through this browser UI.
  */
-
-const TENANT_KEY_STORAGE = 'tsi_ledger_tenant_api_key';
 
 function esc(s) {
   if (s === null || s === undefined) return '';
@@ -22,20 +16,25 @@ function esc(s) {
 function qs(id) { return document.getElementById(id); }
 
 function fmtDate(iso) {
-  if (!iso) return '—';
+  if (!iso) return '-';
   try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
 }
 
 function fmtAmount(v) {
-  if (v === null || v === undefined || v === '') return '—';
+  if (v === null || v === undefined || v === '') return '-';
   const n = Number(v);
   if (Number.isNaN(n)) return String(v);
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 }
 
 function shortId(id) {
-  if (!id) return '—';
+  if (!id) return '-';
   return id.length > 13 ? id.slice(0, 8) + '…' + id.slice(-4) : id;
+}
+
+function genIdempotencyKey() {
+  return (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+    : 'ik-' + Date.now() + '-' + Math.random().toString(16).slice(2);
 }
 
 async function copyText(text, btn) {
@@ -53,45 +52,21 @@ async function copyText(text, btn) {
   }
 }
 
-/* ---------- Admin realm (cookie session, /api/v1/app) ---------- */
+/* ---------- Console session (cookie), one call helper for every module ---------- */
 
-async function adminApi(func, extra) {
+async function consoleApi(path, func, extra, headers) {
+  const h = Object.assign({ 'Content-Type': 'application/json' }, headers || {});
   const body = Object.assign({ _func: func }, extra || {});
-  const res = await fetch('/api/v1/app', {
+  const res = await fetch(path, {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
+    headers: h,
     body: JSON.stringify(body)
   });
   if (res.status === 401) {
     const here = encodeURIComponent(location.pathname + location.search);
     location.href = 'login.html?next=' + here;
     throw new Error('Not authenticated');
-  }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || ('Request failed (' + res.status + ')'));
-  return data;
-}
-
-/* ---------- Tenant realm (X-API-Key, per selected App) ---------- */
-
-function getTenantKey() { return sessionStorage.getItem(TENANT_KEY_STORAGE) || ''; }
-function setTenantKey(key) { sessionStorage.setItem(TENANT_KEY_STORAGE, key); }
-function clearTenantKey() { sessionStorage.removeItem(TENANT_KEY_STORAGE); }
-
-class TenantAuthError extends Error {}
-
-async function tenantApi(path, func, extra, headers) {
-  const key = getTenantKey();
-  if (!key) throw new TenantAuthError('No tenant API key set');
-
-  const h = Object.assign({ 'Content-Type': 'application/json', 'X-API-Key': key }, headers || {});
-  const body = Object.assign({ _func: func }, extra || {});
-  const res = await fetch(path, { method: 'POST', headers: h, body: JSON.stringify(body) });
-
-  if (res.status === 401) {
-    clearTenantKey();
-    throw new TenantAuthError('Tenant API key rejected');
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -103,67 +78,63 @@ async function tenantApi(path, func, extra, headers) {
   return data;
 }
 
-/**
- * Renders the "connected as" bar for tenant-scoped pages into containerId.
- * Calls onReady() once a key is present (already stored, or just entered),
- * and re-renders (without re-running onReady) after "Change".
- */
-function renderTenantKeyBar(containerId, onReady) {
-  const el = qs(containerId);
-
-  function draw() {
-    const key = getTenantKey();
-    if (!key) {
-      el.innerHTML = `
-        <div class="card">
-          <h2>Connect to a Tenant App</h2>
-          <p class="page-sub">This page reads/writes one App's ledger data, so it needs that App's live or test
-             API key (shown once when the key was created or rotated on the <a href="apps.html">Apps</a> page).</p>
-          <div class="field" style="max-width:480px">
-            <label for="tenant-key-input">App API Key</label>
-            <input id="tenant-key-input" type="password" placeholder="sk_live_… or sk_test_…" autocomplete="off">
-          </div>
-          <button class="primary" id="tenant-key-connect">Connect</button>
-          <p id="tenant-key-error" class="alert error" style="display:none;margin-top:12px"></p>
-        </div>`;
-      qs('tenant-key-connect').addEventListener('click', () => {
-        const v = qs('tenant-key-input').value.trim();
-        if (!v) return;
-        setTenantKey(v);
-        draw();
-        onReady();
-      });
-      qs('tenant-key-input').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') qs('tenant-key-connect').click();
-      });
-    } else {
-      el.innerHTML = `
-        <div class="flex-between" style="margin-bottom:20px">
-          <span class="badge blue">Connected: <code>${esc(key.slice(0, 11))}…${esc(key.slice(-4))}</code></span>
-          <button class="small" id="tenant-key-change">Change Key</button>
-        </div>`;
-      qs('tenant-key-change').addEventListener('click', () => { clearTenantKey(); draw(); });
-    }
+/** Downloads a CSV (or any file) response as a browser download - export_entries isn't JSON. */
+async function consoleDownload(path, func, extra, filenameFallback) {
+  const res = await fetch(path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ _func: func }, extra || {}))
+  });
+  if (res.status === 401) {
+    location.href = 'login.html?next=' + encodeURIComponent(location.pathname + location.search);
+    throw new Error('Not authenticated');
   }
-
-  draw();
-  if (getTenantKey()) onReady();
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.message || ('Request failed (' + res.status + ')'));
+  }
+  const blob = await res.blob();
+  const disposition = res.headers.get('Content-Disposition') || '';
+  const match = disposition.match(/filename="([^"]+)"/);
+  const filename = match ? match[1] : filenameFallback;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }
 
-/** Shows a standard "key rejected" recovery prompt inside a target element. */
-function tenantAuthErrorHtml() {
-  return `<div class="alert error">That API key was rejected (revoked, wrong environment, or the App was
-    deactivated). <a href="#" onclick="clearTenantKey();location.reload();return false;">Enter a different key</a>.</div>`;
+/* ---------- Signed-in operator (role-aware nav, page-level gating) ---------- */
+
+let currentUser = null;
+let resolveMeReady;
+const meReady = new Promise((resolve) => { resolveMeReady = resolve; });
+
+async function loadMe() {
+  try {
+    currentUser = await consoleApi('/api/v1/auth', 'me');
+  } catch (e) {
+    currentUser = null;
+  }
+  resolveMeReady(currentUser);
+  return currentUser;
 }
+
+function isAdmin() { return currentUser && currentUser.role === 'ADMIN'; }
 
 /* ---------- Shared page shell (sidebar nav) ---------- */
 
+// Tour is intentionally not listed here - it lives outside the console
+// (linked from the bottom of login.html/setup/init.html instead), reachable
+// without signing in.
 const NAV_ITEMS = [
   { key: 'dashboard', href: 'dashboard.html', label: 'Dashboard' },
-  { key: 'apps', href: 'apps.html', label: 'Apps' },
   { key: 'accounts', href: 'accounts.html', label: 'Chart of Accounts' },
   { key: 'entries', href: 'entries.html', label: 'Journal Entries' },
-  { key: 'audit', href: 'audit.html', label: 'Audit Verification' },
+  { key: 'apps', href: 'apps.html', label: 'Apps', adminOnly: true },
+  { key: 'users', href: 'users.html', label: 'Users', adminOnly: true },
+  { key: 'audit', href: 'audit.html', label: 'Audit' },
   { key: 'reports', href: 'reports.html', label: 'Reports' }
 ];
 
@@ -176,11 +147,12 @@ function renderShell(activeKey, pageTitle, pageSub) {
     </div>
     <div class="shell-backdrop" id="shell-backdrop"></div>
     <nav class="shell-sidebar" id="shell-sidebar">
-      <div class="shell-brand">TSI <span>Ledger</span> Ops</div>
-      <div class="shell-nav">
-        ${NAV_ITEMS.map(i => `<a href="${i.href}" class="${i.key === activeKey ? 'active' : ''}">${i.label}</a>`).join('')}
+      <div class="shell-brand">TSI <span>Ledger</span></div>
+      <div class="shell-nav" id="shell-nav">
+        ${NAV_ITEMS.map(i => `<a href="${i.href}" class="${i.key === activeKey ? 'active' : ''}" data-admin-only="${!!i.adminOnly}">${i.label}</a>`).join('')}
       </div>
       <div class="shell-foot">
+        <div id="shell-user" class="muted" style="font-size:0.78rem;margin-bottom:8px">Loading…</div>
         <button id="shell-logout-btn">Log Out</button>
       </div>
     </nav>
@@ -199,8 +171,16 @@ function renderShell(activeKey, pageTitle, pageSub) {
   backdrop.addEventListener('click', () => { sidebar.classList.remove('open'); backdrop.classList.remove('open'); });
 
   qs('shell-logout-btn').addEventListener('click', async () => {
-    try { await adminApi('admin_logout'); } catch (e) { /* redirecting or already logged out either way */ }
+    try { await consoleApi('/api/v1/auth', 'logout'); } catch (e) { /* redirecting or already logged out either way */ }
     location.href = 'login.html';
+  });
+
+  loadMe().then((me) => {
+    if (!me) return;
+    qs('shell-user').innerHTML = `<strong style="color:#e2e8f0">${esc(me.name)}</strong><br>${esc(me.role)}`;
+    if (me.role !== 'ADMIN') {
+      qs('shell-nav').querySelectorAll('a[data-admin-only="true"]').forEach(a => a.style.display = 'none');
+    }
   });
 
   return qs('shell-content');

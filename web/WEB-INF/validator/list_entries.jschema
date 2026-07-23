@@ -3,6 +3,9 @@
   "type": "object",
   "properties": {
     "_func": { "type": "string" },
+    "app_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+    "date_from": { "type": "string", "minLength": 1 },
+    "date_to": { "type": "string", "minLength": 1 },
     "limit": { "type": "integer", "minimum": 1, "maximum": 200 },
     "offset": { "type": "integer", "minimum": 0 }
   },

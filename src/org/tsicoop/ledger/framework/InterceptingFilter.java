@@ -13,16 +13,20 @@ import java.util.Properties;
  * _processor.tsi, dispatching on the "_func" field in the JSON body (TSI's
  * func-dispatch convention — every call is POST, there is no per-verb routing).
  *
- * Auth is a two-way split, not DPDP CMS's admin/client/bootstrap/public
- * category system:
- *  - /api/v1/app (tenant provisioning) requires X-Admin-Key == ADMIN_MASTER_KEY.
- *  - Every other registered path is tenant-facing and requires a valid
- *    X-API-Key resolved to an active app (see InputProcessor.resolveTenantApp).
+ * Each _processor.tsi entry is "class|AUTH_MODE":
+ *  - PUBLIC: no auth check here (Setup/Auth's login/setup_status do their own
+ *    internal checks — e.g. Setup.initial_setup 409s once an operator exists).
+ *  - CONSOLE: requires a valid Ops Console session cookie (InputProcessor.
+ *    resolveConsoleSession) — Users, Apps/API-key provisioning, Reports.
+ *  - TENANT: requires a valid X-API-Key (InputProcessor.resolveTenantApp).
+ *  - TENANT_OR_CONSOLE: either of the above; the Action itself branches on
+ *    InputProcessor.getAppId(req) vs getUserId(req) to pick behavior/scope.
  */
 public class InterceptingFilter implements Filter {
 
     private static final String API_PREFIX = "/api/v1/";
-    private static final String ADMIN_PATH = "/api/v1/app";
+
+    private enum AuthMode { PUBLIC, CONSOLE, TENANT, TENANT_OR_CONSOLE }
 
     @Override
     public void destroy() {
@@ -60,7 +64,7 @@ public class InterceptingFilter implements Filter {
             res.setHeader("Vary", "Origin");
         }
         res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-        res.setHeader("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-API-Key, X-Admin-Key, Idempotency-Key");
+        res.setHeader("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-API-Key, Idempotency-Key");
         res.setHeader("Access-Control-Max-Age", "3600");
 
         res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
@@ -87,18 +91,22 @@ public class InterceptingFilter implements Filter {
             return;
         }
 
-        // Browser-originated calls (Ops Console) must come from an allowed origin.
-        // Server-to-server tenant calls typically send no Origin header — not checked.
-        if (ADMIN_PATH.equalsIgnoreCase(uri) && !isOriginAllowed(req)) {
-            OutputProcessor.errorResponse(res, HttpServletResponse.SC_FORBIDDEN, "Forbidden", "Origin not permitted.", uri);
-            return;
-        }
-
         Properties apiRegistry = SystemConfig.getProcessorConfig();
         String servletPath = uri.endsWith("/") ? uri.substring(0, uri.length() - 1) : uri;
-        String classname = apiRegistry.getProperty(servletPath);
-        if (classname == null) {
+        String registryValue = apiRegistry.getProperty(servletPath);
+        if (registryValue == null) {
             OutputProcessor.errorResponse(res, HttpServletResponse.SC_NOT_FOUND, "Not Found", "API endpoint not found: " + uri, uri);
+            return;
+        }
+        String[] parts = registryValue.split("\\|", 2);
+        String classname = parts[0];
+        AuthMode authMode = parts.length > 1 ? AuthMode.valueOf(parts[1].trim()) : AuthMode.TENANT;
+
+        // Browser-originated calls (Ops Console) must come from an allowed origin.
+        // Server-to-server tenant-only calls typically send no Origin header —
+        // TENANT-only paths (e.g. post_entry) aren't checked.
+        if (authMode != AuthMode.TENANT && !isOriginAllowed(req)) {
+            OutputProcessor.errorResponse(res, HttpServletResponse.SC_FORBIDDEN, "Forbidden", "Origin not permitted.", uri);
             return;
         }
 
@@ -120,10 +128,20 @@ public class InterceptingFilter implements Filter {
             }
 
             boolean authenticated;
-            if (ADMIN_PATH.equalsIgnoreCase(servletPath)) {
-                authenticated = InputProcessor.isValidAdminRequest(req) || InputProcessor.isValidAdminSession(req);
-            } else {
-                authenticated = InputProcessor.resolveTenantApp(req);
+            switch (authMode) {
+                case PUBLIC:
+                    authenticated = true;
+                    break;
+                case CONSOLE:
+                    authenticated = InputProcessor.resolveConsoleSession(req);
+                    break;
+                case TENANT:
+                    authenticated = InputProcessor.resolveTenantApp(req);
+                    break;
+                case TENANT_OR_CONSOLE:
+                default:
+                    authenticated = InputProcessor.resolveTenantApp(req) || InputProcessor.resolveConsoleSession(req);
+                    break;
             }
 
             if (!authenticated) {

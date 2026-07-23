@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TSI Ledger - Initial System Setup</title>
+  <link rel="stylesheet" href="../assets/console.css">
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .setup-card { width: 100%; max-width: 420px; }
+    .setup-card h1 { text-align: center; margin-bottom: 4px; }
+    .setup-card .tagline { text-align: center; color: var(--ink); font-size: 0.85rem; font-weight: 600; margin: 0 0 6px; }
+    .setup-card .sub { text-align: center; color: var(--muted); margin-bottom: 24px; }
+    .setup-card button { width: 100%; justify-content: center; margin-top: 6px; }
+  </style>
+</head>
+<body>
+
+<div class="card setup-card">
+  <h1>TSI Ledger</h1>
+  <p class="tagline">An open-source API first double entry accounting engine</p>
+  <p class="sub">Create the first Admin account</p>
+
+  <div id="setup-error" class="alert error" style="display:none"></div>
+  <div id="setup-success" class="alert success" style="display:none">
+    Admin account created. <a href="../login.html">Go to Login &rarr;</a>
+  </div>
+
+  <form id="setup-form">
+    <div class="field">
+      <label for="setup-name">Full Name</label>
+      <input id="setup-name" required maxlength="128" placeholder="System Administrator">
+    </div>
+    <div class="field">
+      <label for="setup-email">Email</label>
+      <input id="setup-email" type="email" required placeholder="admin@example.com">
+    </div>
+    <div class="field">
+      <label for="setup-password">Password</label>
+      <input id="setup-password" type="password" required minlength="12" placeholder="Minimum 12 characters">
+    </div>
+    <div class="field">
+      <label for="setup-password-confirm">Confirm Password</label>
+      <input id="setup-password-confirm" type="password" required minlength="12">
+    </div>
+    <button type="submit" class="primary" id="setup-btn">Create Admin Account</button>
+  </form>
+  <p class="hint" style="text-align:center;margin-top:16px">
+    This only works once - the console redirects here automatically until the first Admin exists.
+  </p>
+  <p class="hint" style="text-align:center;margin-top:8px">
+    New here? Take the <a href="../../tour/index.html">console tour</a>.
+  </p>
+</div>
+
+<script>
+  const form = document.getElementById('setup-form');
+  const errorBox = document.getElementById('setup-error');
+  const successBox = document.getElementById('setup-success');
+  const btn = document.getElementById('setup-btn');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBox.style.display = 'none';
+
+    const name = document.getElementById('setup-name').value.trim();
+    const email = document.getElementById('setup-email').value.trim();
+    const password = document.getElementById('setup-password').value;
+    const confirm = document.getElementById('setup-password-confirm').value;
+
+    if (password !== confirm) {
+      errorBox.textContent = 'Passwords do not match.';
+      errorBox.style.display = 'block';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Creating…';
+    try {
+      const res = await fetch('/api/v1/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ _func: 'initial_setup', name, email, password })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        errorBox.textContent = data.message || 'Setup failed.';
+        errorBox.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Create Admin Account';
+        return;
+      }
+      form.style.display = 'none';
+      successBox.style.display = 'block';
+    } catch (err) {
+      errorBox.textContent = 'Could not reach the server: ' + err.message;
+      errorBox.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Create Admin Account';
+    }
+  });
+</script>
+</body>
+</html>

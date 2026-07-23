@@ -1,0 +1,11 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "_func": { "type": "string" },
+    "operator_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "role": { "type": "string", "enum": ["ADMIN", "OPERATOR", "admin", "operator"] }
+  },
+  "required": ["_func", "operator_id", "role"]
+}

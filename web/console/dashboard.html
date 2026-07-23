@@ -3,34 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard — TSI Ledger Ops Console</title>
+  <title>Dashboard - TSI Ledger Ops Console</title>
   <link rel="stylesheet" href="assets/console.css">
 </head>
 <body>
 <script src="assets/console.js"></script>
 <script>
-  const content = renderShell('dashboard', 'Dashboard', 'Tenant provisioning overview.');
+  const content = renderShell('dashboard', 'Dashboard', 'One organization-wide ledger - every App posts here against the shared Chart of Accounts.');
 
   content.innerHTML = `
     <div class="stat-grid" id="stat-grid">
-      <div class="stat-card"><div class="label">Total Apps</div><div class="value" id="stat-total">—</div></div>
-      <div class="stat-card ok"><div class="label">Active Apps</div><div class="value" id="stat-active">—</div></div>
-      <div class="stat-card"><div class="label">Live Keys Issued</div><div class="value" id="stat-live">—</div></div>
-      <div class="stat-card"><div class="label">Test Keys Issued</div><div class="value" id="stat-test">—</div></div>
+      <div class="stat-card"><div class="label">Apps</div><div class="value" id="stat-apps">-</div></div>
+      <div class="stat-card ok"><div class="label">Accounts (COA)</div><div class="value" id="stat-accounts">-</div></div>
+      <div class="stat-card"><div class="label">Operators</div><div class="value" id="stat-operators">-</div></div>
+      <div class="stat-card" id="stat-pending-card"><div class="label">Pending Reversals</div><div class="value" id="stat-pending">-</div></div>
     </div>
 
     <div class="card">
-      <h2>Getting Started</h2>
-      <p>The console has two separate credential realms, matching the API exactly:</p>
-      <ol>
-        <li><strong>Admin session</strong> (what you just logged into) — provisions Apps and their API keys on
-          the <a href="apps.html">Apps</a> page. Nothing more; there's no operator/role system.</li>
-        <li><strong>Tenant API key</strong> — browsing a specific App's <a href="accounts.html">chart of accounts</a>,
-          <a href="entries.html">journal entries</a>, <a href="audit.html">audit chain</a>, or
-          <a href="reports.html">reports</a> requires that App's own live or test key. Admin sessions can't retrieve
-          it after the fact — keys are shown exactly once, at creation or rotation, by design. Paste it in on those
-          pages when prompted; it's held only in this browser tab for the session.</li>
-      </ol>
+      <h2>Welcome, <span id="welcome-name">-</span></h2>
+      <p>This console manages one shared, organization-wide ledger. Apps (HRMS, Commerce, Lending, ...) post
+        journal entries via their own API key, always against the same <a href="accounts.html">Chart of Accounts</a>.</p>
+      <ul>
+        <li><strong>Operators</strong> browse the COA/ledger, post manual entries, and request reversals.</li>
+        <li><strong>Admins</strong> additionally provision <a href="apps.html">Apps &amp; API keys</a>, manage the
+          <a href="accounts.html">Chart of Accounts</a> structure, manage <a href="users.html">Users</a>, and approve
+          or reject reversal requests on the <a href="entries.html">Journal Entries</a> page (maker-checker - a
+          different Admin than the requester must decide).</li>
+      </ul>
     </div>
 
     <div class="card">
@@ -45,20 +44,16 @@
   `;
 
   async function load() {
-    try {
-      const apps = await adminApi('list_apps');
-      const total = apps.length;
-      const active = apps.filter(a => a.is_active).length;
-      const live = apps.filter(a => a.has_live_key).length;
-      const test = apps.filter(a => a.has_test_key).length;
-      qs('stat-total').textContent = total;
-      qs('stat-active').textContent = active;
-      qs('stat-live').textContent = live;
-      qs('stat-test').textContent = test;
+    const me = await meReady;
+    if (me) qs('welcome-name').textContent = me.name;
+    if (!isAdmin()) qs('stat-pending-card').style.display = 'none';
 
+    try {
+      const apps = await consoleApi('/api/v1/app', 'list_apps');
+      qs('stat-apps').textContent = apps.length;
       const recent = apps.slice(0, 8);
       qs('recent-apps-body').innerHTML = recent.length === 0
-        ? '<tr class="empty-row"><td colspan="4">No Apps yet. Create one on the Apps page.</td></tr>'
+        ? '<tr class="empty-row"><td colspan="4">No Apps yet.</td></tr>'
         : recent.map(a => `
           <tr>
             <td>${esc(a.app_name)}</td>
@@ -68,6 +63,25 @@
           </tr>`).join('');
     } catch (e) {
       qs('recent-apps-body').innerHTML = `<tr class="empty-row"><td colspan="4">${esc(e.message)}</td></tr>`;
+    }
+
+    try {
+      const accounts = await consoleApi('/api/v1/accounts', 'list_accounts', { include_inactive: true });
+      qs('stat-accounts').textContent = accounts.length;
+    } catch (e) { qs('stat-accounts').textContent = '-'; }
+
+    if (isAdmin()) {
+      try {
+        const operators = await consoleApi('/api/v1/users', 'list_operators');
+        qs('stat-operators').textContent = operators.length;
+      } catch (e) { qs('stat-operators').textContent = '-'; }
+
+      try {
+        const pending = await consoleApi('/api/v1/ledger', 'list_reversal_requests', { status: 'PENDING' });
+        qs('stat-pending').textContent = pending.length;
+      } catch (e) { qs('stat-pending').textContent = '-'; }
+    } else {
+      qs('stat-operators').textContent = '-';
     }
   }
 

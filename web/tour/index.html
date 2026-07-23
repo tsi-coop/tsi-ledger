@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TSI Ledger - Console Tour</title>
+  <link rel="stylesheet" href="../console/assets/console.css">
+  <style>
+    body { background: var(--bg); }
+    .tour-wrap { max-width: 900px; margin: 0 auto; padding: 40px 24px; }
+    .tour-hero { text-align: center; margin-bottom: 32px; }
+    .tour-hero h1 { font-size: 1.9rem; }
+    .tour-step { display: flex; gap: 16px; padding: 18px 0; border-bottom: 1px solid var(--border); }
+    .tour-step:last-child { border-bottom: none; }
+    .tour-step .num {
+      flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
+      background: var(--primary); color: #fff; display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 0.85rem;
+    }
+    .tour-step h3 { margin: 0 0 4px; font-size: 1rem; }
+    .tour-step p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+    .tour-step .role { font-weight: 600; }
+  </style>
+</head>
+<body>
+<div class="tour-wrap">
+  <div class="tour-hero">
+    <span class="badge blue" style="margin-bottom:10px">Ops Console Tour</span>
+    <h1>TSI Ledger - one organization-wide ledger</h1>
+    <p class="page-sub">Every App (HRMS, Commerce, Lending, ...) posts double-entry journal entries via its own
+      API key, always against one shared Chart of Accounts. This walks through the console modules in the order
+      you'd typically touch them.</p>
+  </div>
+
+  <div class="card">
+    <div class="tour-step">
+      <div class="num">1</div>
+      <div>
+        <h3>System Setup</h3>
+        <p>The very first time the console runs, there's no one to log in as. <code>setup/init.html</code> creates
+          the first <span class="role">Admin</span> account. After that it 409s - every other account is created
+          from the Users module.</p>
+      </div>
+    </div>
+    <div class="tour-step">
+      <div class="num">2</div>
+      <div>
+        <h3>Login</h3>
+        <p>Email + password, same as any normal application login. There's no shared master key - every action
+          in the console is attributed to a real operator.</p>
+      </div>
+    </div>
+    <div class="tour-step">
+      <div class="num">3</div>
+      <div>
+        <h3>Users <span class="badge blue">Admin</span></h3>
+        <p>Admins create and manage <span class="role">Operator</span> and <span class="role">Admin</span> accounts
+          for the accounts team, reset passwords, and deactivate access.</p>
+      </div>
+    </div>
+    <div class="tour-step">
+      <div class="num">4</div>
+      <div>
+        <h3>Apps &amp; API Keys <span class="badge blue">Admin</span></h3>
+        <p>Each posting source (HRMS, Commerce, Lending, ...) is provisioned here as an "App" with its own
+          live/test API key. Keys are shown exactly once, at creation or rotation - the console never stores or
+          re-displays them.</p>
+      </div>
+    </div>
+    <div class="tour-step">
+      <div class="num">5</div>
+      <div>
+        <h3>Chart of Accounts</h3>
+        <p>One shared list of accounts for the whole organization - not per-App. Admins create/deactivate
+          accounts; everyone can browse them. Every App posts against this same chart.</p>
+      </div>
+    </div>
+    <div class="tour-step">
+      <div class="num">6</div>
+      <div>
+        <h3>Posting Entries (API)</h3>
+        <p>Apps post balanced double-entry journal entries directly to the API with their own <code>X-API-Key</code> -
+          this never goes through the browser console. Each App's postings form their own tamper-evident,
+          hash-chained sequence.</p>
+      </div>
+    </div>
+    <div class="tour-step">
+      <div class="num">7</div>
+      <div>
+        <h3>Manual Entries &amp; Reversal Requests</h3>
+        <p><span class="role">Operators</span> can post manual correcting entries from the console and request a
+          reversal of any posted entry with a reason. A request doesn't post anything by itself.</p>
+      </div>
+    </div>
+    <div class="tour-step">
+      <div class="num">8</div>
+      <div>
+        <h3>Reversal Approvals <span class="badge blue">Admin</span></h3>
+        <p>Maker-checker: a different Admin than the requester must approve before the offsetting entry actually
+          posts. An App reversing its own entry via its API key skips this - that's an automated correction, not
+          a manual one, so it posts immediately.</p>
+      </div>
+    </div>
+    <div class="tour-step">
+      <div class="num">9</div>
+      <div>
+        <h3>Audit Verification</h3>
+        <p>Recomputes the SHA-256 hash chain for one App from the currently stored data and compares it to what
+          was recorded at post time - catches any out-of-band tampering.</p>
+      </div>
+    </div>
+    <div class="tour-step">
+      <div class="num">10</div>
+      <div>
+        <h3>Reports &amp; Raw Export</h3>
+        <p>Trial balance and balance sheet, combined across every App by default (or filtered to one). Download
+          the full raw journal-entry ledger as CSV for reconciliation or import elsewhere.</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;margin-top:24px">
+    <a href="../console/login.html" class="btn primary" style="padding:10px 20px">Go to Login &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

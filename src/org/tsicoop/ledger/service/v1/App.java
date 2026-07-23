@@ -6,7 +6,6 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.tsicoop.ledger.framework.Action;
 import org.tsicoop.ledger.framework.InputProcessor;
-import org.tsicoop.ledger.framework.JWTUtil;
 import org.tsicoop.ledger.framework.OutputProcessor;
 import org.tsicoop.ledger.framework.PoolDB;
 
@@ -18,10 +17,12 @@ import java.sql.SQLException;
 import java.util.UUID;
 
 /**
- * Admin-only tenant provisioning (X-Admin-Key — see InterceptingFilter /
- * InputProcessor.isValidAdminRequest). Raw API keys are generated here and
+ * Admin-only App/API-key provisioning (CONSOLE auth mode — see
+ * InterceptingFilter/_processor.tsi). Raw API keys are generated here and
  * returned exactly once, at creation or rotation time; only their SHA-256
- * hash is ever persisted (FSD Section 3 — "secure hash index").
+ * hash is ever persisted (FSD Section 3 — "secure hash index"). Login/logout
+ * moved to Auth.java, which issues a real identity-bearing session instead
+ * of trading a shared master key for a cookie.
  */
 public class App implements Action {
 
@@ -31,6 +32,15 @@ public class App implements Action {
             JSONObject input = InputProcessor.getInput(req);
             String func = (String) input.get("_func");
 
+            // list_apps/get_app are read-only and needed by both roles (e.g. the
+            // App filter on the Journal Entries / Reports console pages); every
+            // other func here provisions or rotates a credential and is Admin-only.
+            boolean readOnly = "list_apps".equalsIgnoreCase(func) || "get_app".equalsIgnoreCase(func);
+            if (!readOnly && !InputProcessor.isAdmin(req)) {
+                OutputProcessor.errorResponse(res, 403, "Forbidden", "Admin role required.", req.getRequestURI());
+                return;
+            }
+
             switch (func.toLowerCase()) {
                 case "create_app": handleCreateApp(input, res, req); break;
                 case "list_apps": handleListApps(res, req); break;
@@ -38,8 +48,6 @@ public class App implements Action {
                 case "rotate_api_key": handleRotateApiKey(input, res, req); break;
                 case "revoke_api_key": handleRevokeApiKey(input, res, req); break;
                 case "deactivate_app": handleDeactivateApp(input, res, req); break;
-                case "admin_login": handleAdminLogin(res); break;
-                case "admin_logout": handleAdminLogout(res); break;
                 default:
                     OutputProcessor.errorResponse(res, 400, "Bad Request", "Unknown function: " + func, req.getRequestURI());
             }
@@ -81,7 +89,7 @@ public class App implements Action {
             output.put("created_at", rs.getTimestamp("created_at").toInstant().toString());
             output.put("live_api_key", liveKey);
             output.put("test_api_key", testKey);
-            output.put("warning", "Store these keys now — they are shown only once and cannot be retrieved again.");
+            output.put("warning", "Store these keys now - they are shown only once and cannot be retrieved again.");
             OutputProcessor.send(res, 201, output);
         } finally {
             if (pool != null) pool.cleanup(rs, pstmt, conn);
@@ -161,7 +169,7 @@ public class App implements Action {
             output.put("app_id", appId.toString());
             output.put("key_env", keyEnv);
             output.put("api_key", newKey);
-            output.put("warning", "Store this key now — it is shown only once and cannot be retrieved again.");
+            output.put("warning", "Store this key now - it is shown only once and cannot be retrieved again.");
             OutputProcessor.send(res, 200, output);
         } finally {
             if (pool != null) pool.cleanup(rs, pstmt, conn);
@@ -230,34 +238,6 @@ public class App implements Action {
         } finally {
             if (pool != null) pool.cleanup(rs, pstmt, conn);
         }
-    }
-
-    /**
-     * Issues the Ops Console session cookie. Reachable only once the caller
-     * has already cleared InterceptingFilter's admin check for this path
-     * (X-Admin-Key == ADMIN_MASTER_KEY) — this just trades that one-time
-     * proof for a cookie so the console doesn't resend the master key on
-     * every subsequent call. Max-Age mirrors JWTUtil's own 10-hour expiry;
-     * the cookie is a UX convenience, JWTUtil.isTokenValid is what's actually
-     * enforced server-side regardless of what the browser does with it.
-     */
-    private void handleAdminLogin(HttpServletResponse res) {
-        String token = JWTUtil.generateAdminToken();
-        boolean secure = !"local".equals(System.getenv("TSI_LEDGER_ENV"));
-        res.addHeader("Set-Cookie", InputProcessor.ADMIN_SESSION_COOKIE + "=" + token
-                + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=36000" + (secure ? "; Secure" : ""));
-        JSONObject output = new JSONObject();
-        output.put("authenticated", true);
-        OutputProcessor.send(res, 200, output);
-    }
-
-    private void handleAdminLogout(HttpServletResponse res) {
-        boolean secure = !"local".equals(System.getenv("TSI_LEDGER_ENV"));
-        res.addHeader("Set-Cookie", InputProcessor.ADMIN_SESSION_COOKIE + "=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
-                + (secure ? "; Secure" : ""));
-        JSONObject output = new JSONObject();
-        output.put("authenticated", false);
-        OutputProcessor.send(res, 200, output);
     }
 
     private String fetchExistingHash(Connection conn, UUID appId, String column) throws SQLException {

@@ -3,22 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reports — TSI Ledger Ops Console</title>
+  <title>Reports - TSI Ledger Ops Console</title>
   <link rel="stylesheet" href="assets/console.css">
 </head>
 <body>
 <script src="assets/console.js"></script>
 <script>
-  const content = renderShell('reports', 'Reports', 'Trial balance and balance sheet, computed live from journal_entries/entry_lines.');
-  content.innerHTML = `<div id="tenant-bar"></div><div id="reports-app" style="display:none"></div>`;
+  const content = renderShell('reports', 'Reports', 'Trial balance and balance sheet, computed live from journal_entries/entry_lines - combined across all Apps by default.');
+  content.innerHTML = `<div id="reports-app"></div>`;
 
-  function init() {
+  let appsCache = [];
+
+  async function init() {
+    try { appsCache = await consoleApi('/api/v1/app', 'list_apps'); } catch (e) { appsCache = []; }
+    const appOptions = '<option value="">All Apps</option>' + appsCache.map(a => `<option value="${esc(a.id)}">${esc(a.app_name)}</option>`).join('');
+
     const app = qs('reports-app');
-    app.style.display = 'block';
     app.innerHTML = `
       <div class="card">
         <h2>Trial Balance</h2>
-        <div class="field-row" style="align-items:end;max-width:420px">
+        <div class="field-row" style="align-items:end;max-width:560px">
+          <div class="field"><label for="tb-app">App</label><select id="tb-app">${appOptions}</select></div>
           <div class="field">
             <label for="tb-date">As Of Date (optional)</label>
             <input id="tb-date" type="date">
@@ -31,9 +36,10 @@
       <div class="card">
         <h2>Balance Sheet</h2>
         <p class="hint" style="margin-top:-6px">Assets = Liabilities + Equity. Revenue/Expense accounts aren't
-          included — there's no closing-entry mechanism in this ledger to fold them into Equity, so they only
+          included - there's no closing-entry mechanism in this ledger to fold them into Equity, so they only
           appear on the Trial Balance above.</p>
-        <div class="field-row" style="align-items:end;max-width:420px">
+        <div class="field-row" style="align-items:end;max-width:560px">
+          <div class="field"><label for="bs-app">App</label><select id="bs-app">${appOptions}</select></div>
           <div class="field">
             <label for="bs-date">As Of Date (optional)</label>
             <input id="bs-date" type="date">
@@ -42,19 +48,33 @@
         </div>
         <div id="bs-result"></div>
       </div>
+
+      <div class="card">
+        <h2>Raw Journal Entries Export</h2>
+        <p class="page-sub">One CSV row per debit/credit leg, joined to its parent entry and account - for
+          reconciliation or loading into another tool.</p>
+        <div class="field-row" style="align-items:end;max-width:720px">
+          <div class="field"><label for="exp-app">App</label><select id="exp-app">${appOptions}</select></div>
+          <div class="field"><label for="exp-from">From (optional)</label><input id="exp-from" type="date"></div>
+          <div class="field"><label for="exp-to">To (optional)</label><input id="exp-to" type="date"></div>
+          <div class="field"><button class="primary" id="exp-run">Download CSV</button></div>
+        </div>
+        <div id="exp-result"></div>
+      </div>
     `;
     qs('tb-run').addEventListener('click', runTrialBalance);
     qs('bs-run').addEventListener('click', runBalanceSheet);
+    qs('exp-run').addEventListener('click', runExport);
   }
 
   async function runTrialBalance() {
     const box = qs('tb-result');
     box.innerHTML = '<p class="spinner">Loading…</p>';
     try {
-      const date = qs('tb-date').value;
       const params = {};
-      if (date) params.as_of_date = date;
-      const r = await tenantApi('/api/v1/reports', 'trial_balance', params);
+      if (qs('tb-date').value) params.as_of_date = qs('tb-date').value;
+      if (qs('tb-app').value) params.app_id = qs('tb-app').value;
+      const r = await consoleApi('/api/v1/reports', 'trial_balance', params);
 
       box.innerHTML = `
         <div class="table-wrap">
@@ -80,11 +100,11 @@
           </table>
         </div>
         <div class="alert ${r.balanced ? 'success' : 'error'}" style="margin-top:14px">
-          ${r.balanced ? 'Balanced ✓ — total debits equal total credits.' : 'Not balanced — this should never happen on an untampered chain.'}
+          ${r.balanced ? 'Balanced ✓ - total debits equal total credits.' : 'Not balanced - this should never happen on an untampered chain.'}
         </div>
       `;
     } catch (e) {
-      box.innerHTML = e instanceof TenantAuthError ? tenantAuthErrorHtml() : `<div class="alert error">${esc(e.message)}</div>`;
+      box.innerHTML = `<div class="alert error">${esc(e.message)}</div>`;
     }
   }
 
@@ -107,10 +127,10 @@
     const box = qs('bs-result');
     box.innerHTML = '<p class="spinner">Loading…</p>';
     try {
-      const date = qs('bs-date').value;
       const params = {};
-      if (date) params.as_of_date = date;
-      const r = await tenantApi('/api/v1/reports', 'balance_sheet', params);
+      if (qs('bs-date').value) params.as_of_date = qs('bs-date').value;
+      if (qs('bs-app').value) params.app_id = qs('bs-app').value;
+      const r = await consoleApi('/api/v1/reports', 'balance_sheet', params);
 
       box.innerHTML = `
         <div class="stat-grid">
@@ -123,16 +143,31 @@
         ${balanceSheetSection('Equity', r.equity)}
         <div class="alert ${r.balanced ? 'success' : 'warn'}" style="margin-top:14px">
           ${r.balanced
-            ? 'Balanced ✓ — Assets = Liabilities + Equity.'
-            : `Not balanced (Assets ${fmtAmount(r.assets_total)} vs L+E ${fmtAmount(Number(r.liabilities_total) + Number(r.equity_total))}) — expected if Revenue/Expense activity hasn't been closed to Equity.`}
+            ? 'Balanced ✓ - Assets = Liabilities + Equity.'
+            : `Not balanced (Assets ${fmtAmount(r.assets_total)} vs L+E ${fmtAmount(Number(r.liabilities_total) + Number(r.equity_total))}) - expected if Revenue/Expense activity hasn't been closed to Equity.`}
         </div>
       `;
     } catch (e) {
-      box.innerHTML = e instanceof TenantAuthError ? tenantAuthErrorHtml() : `<div class="alert error">${esc(e.message)}</div>`;
+      box.innerHTML = `<div class="alert error">${esc(e.message)}</div>`;
     }
   }
 
-  renderTenantKeyBar('tenant-bar', init);
+  async function runExport() {
+    const box = qs('exp-result');
+    box.innerHTML = '<p class="spinner">Preparing download…</p>';
+    try {
+      const params = {};
+      if (qs('exp-app').value) params.app_id = qs('exp-app').value;
+      if (qs('exp-from').value) params.date_from = qs('exp-from').value;
+      if (qs('exp-to').value) params.date_to = qs('exp-to').value;
+      await consoleDownload('/api/v1/reports', 'export_entries', params, 'journal_entries.csv');
+      box.innerHTML = '<div class="alert success">Download started.</div>';
+    } catch (e) {
+      box.innerHTML = `<div class="alert error">${esc(e.message)}</div>`;
+    }
+  }
+
+  meReady.then(init);
 </script>
 </body>
 </html>

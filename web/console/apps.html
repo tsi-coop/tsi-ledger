@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Apps — TSI Ledger Ops Console</title>
+  <title>Apps - TSI Ledger Ops Console</title>
   <link rel="stylesheet" href="assets/console.css">
 </head>
 <body>
 <script src="assets/console.js"></script>
 <script>
-  const content = renderShell('apps', 'Apps', 'Tenant provisioning — create Apps and manage their live/test API keys.');
+  const content = renderShell('apps', 'Apps', 'Posting sources (HRMS, Commerce, Lending, ...) - provision Apps and manage their live/test API keys. Admin only.');
 
   content.innerHTML = `
     <div class="card">
@@ -34,7 +34,7 @@
         <form id="create-form">
           <div class="field">
             <label for="new-app-name">App Name</label>
-            <input id="new-app-name" required maxlength="255" placeholder="e.g. Acme Bookkeeping">
+            <input id="new-app-name" required maxlength="255" placeholder="e.g. HRMS, Commerce, Lending">
           </div>
           <div class="modal-actions">
             <button type="button" onclick="closeModal('create-modal')">Cancel</button>
@@ -48,7 +48,8 @@
     <div class="modal-overlay" id="keys-modal">
       <div class="modal">
         <h2 id="keys-modal-title">API Key</h2>
-        <div class="alert warn">Shown once — store it now. It cannot be retrieved again; only a hash is kept.</div>
+        <div class="alert warn">Shown once - store it now. It cannot be retrieved again; only a hash is kept.
+          Give this key to the App itself (server-to-server) - it's never needed in this console.</div>
         <div id="keys-modal-body"></div>
         <div class="modal-actions">
           <button onclick="closeModal('keys-modal')">Done</button>
@@ -76,7 +77,7 @@
   async function loadApps() {
     qs('apps-error').innerHTML = '';
     try {
-      appsCache = await adminApi('list_apps');
+      appsCache = await consoleApi('/api/v1/app', 'list_apps');
       qs('apps-body').innerHTML = appsCache.length === 0
         ? '<tr class="empty-row"><td colspan="7">No Apps yet.</td></tr>'
         : appsCache.map(a => `
@@ -101,7 +102,7 @@
     const name = qs('new-app-name').value.trim();
     if (!name) return;
     try {
-      const app = await adminApi('create_app', { app_name: name });
+      const app = await consoleApi('/api/v1/app', 'create_app', { app_name: name });
       closeModal('create-modal');
       showKeys('New App: ' + app.app_name, [
         { label: 'Live API Key', value: app.live_api_key },
@@ -121,14 +122,8 @@
         <span style="overflow:hidden;text-overflow:ellipsis">${esc(en.value)}</span>
         <button class="small" onclick="copyText('${esc(en.value)}', this)">Copy</button>
       </div>
-      <button class="small" onclick="useKeyElsewhere('${esc(en.value)}')" style="margin-bottom:14px">Browse this App's Accounts &rarr;</button>
     `).join('');
     openModal('keys-modal');
-  }
-
-  function useKeyElsewhere(key) {
-    setTenantKey(key);
-    location.href = 'accounts.html';
   }
 
   function openManage(appId) {
@@ -155,7 +150,7 @@
       <div class="section-gap">
         <h2 style="font-size:0.95rem">Danger Zone</h2>
         <button class="danger" ${!app.is_active ? 'disabled' : ''} onclick="deactivateApp('${appId}')">Deactivate App</button>
-        <p class="hint">Deactivating revokes both keys immediately and blocks all further API calls for this App. There is no reactivate — this mirrors the API.</p>
+        <p class="hint">Deactivating revokes both keys immediately and blocks all further API calls for this App. There is no reactivate - this mirrors the API.</p>
       </div>
     `;
     openModal('manage-modal');
@@ -163,7 +158,7 @@
 
   async function rotateKey(appId, keyEnv) {
     try {
-      const result = await adminApi('rotate_api_key', { app_id: appId, key_env: keyEnv });
+      const result = await consoleApi('/api/v1/app', 'rotate_api_key', { app_id: appId, key_env: keyEnv });
       closeModal('manage-modal');
       showKeys('Rotated ' + keyEnv + ' Key', [{ label: keyEnv + ' API Key', value: result.api_key }]);
       loadApps();
@@ -173,7 +168,7 @@
   async function revokeKey(appId, keyEnv) {
     if (!confirm('Revoke the ' + keyEnv + ' key? Any client using it will start getting 401s immediately.')) return;
     try {
-      await adminApi('revoke_api_key', { app_id: appId, key_env: keyEnv });
+      await consoleApi('/api/v1/app', 'revoke_api_key', { app_id: appId, key_env: keyEnv });
       closeModal('manage-modal');
       loadApps();
     } catch (e) { alert('Revoke failed: ' + e.message); }
@@ -182,7 +177,7 @@
   async function deactivateApp(appId) {
     if (!confirm('Deactivate this App? Both keys stop working immediately and cannot be un-revoked.')) return;
     try {
-      await adminApi('deactivate_app', { app_id: appId });
+      await consoleApi('/api/v1/app', 'deactivate_app', { app_id: appId });
       closeModal('manage-modal');
       loadApps();
     } catch (e) { alert('Deactivate failed: ' + e.message); }

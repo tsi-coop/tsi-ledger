@@ -1,7 +1,10 @@
-# Service definitions
-# /api/v1/app is admin-only (X-Admin-Key). Everything else is tenant-facing (X-API-Key).
-/api/v1/app=org.tsicoop.ledger.service.v1.App
-/api/v1/accounts=org.tsicoop.ledger.service.v1.Accounts
-/api/v1/ledger=org.tsicoop.ledger.service.v1.Ledger
-/api/v1/audit=org.tsicoop.ledger.service.v1.Audit
-/api/v1/reports=org.tsicoop.ledger.service.v1.Reports
+# Service definitions: "class|AUTH_MODE" — see InterceptingFilter for the
+# PUBLIC / CONSOLE / TENANT / TENANT_OR_CONSOLE auth-mode semantics.
+/api/v1/setup=org.tsicoop.ledger.service.v1.Setup|PUBLIC
+/api/v1/auth=org.tsicoop.ledger.service.v1.Auth|PUBLIC
+/api/v1/users=org.tsicoop.ledger.service.v1.Users|CONSOLE
+/api/v1/app=org.tsicoop.ledger.service.v1.App|CONSOLE
+/api/v1/accounts=org.tsicoop.ledger.service.v1.Accounts|TENANT_OR_CONSOLE
+/api/v1/ledger=org.tsicoop.ledger.service.v1.Ledger|TENANT_OR_CONSOLE
+/api/v1/audit=org.tsicoop.ledger.service.v1.Audit|TENANT_OR_CONSOLE
+/api/v1/reports=org.tsicoop.ledger.service.v1.Reports|CONSOLE

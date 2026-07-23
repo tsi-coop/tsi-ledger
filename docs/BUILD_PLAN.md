@@ -164,3 +164,40 @@ Pages under `web/console/`, styled/structured like `tsi-dpdp-cms/web/console`:
 ## Notes
 - We'll pause after each step for your review before starting the next —
   no need to ask separately each time, that's the default cadence.
+
+## Phase 2 — Org-wide COA, user login, reversals, raw export
+
+Steps 1–9 above shipped v1: per-App-scoped chart of accounts, and an Ops
+Console gated by a single shared `ADMIN_MASTER_KEY` (no operator/role
+system). That model didn't match the real shape of the system the user is
+building: **one organization-wide double-entry ledger**, not N independent
+tenant ledgers. Apps (HRMS, Commerce, Lending, ...) are posting sources that
+submit entries via their own API key, but they all post against **one
+shared Chart of Accounts** — not their own. The Ops Console became a real
+internal tool for the accounts team (Admin + Operator users, email/password
+login), not a credential-pasting API debugger.
+
+Changes (full design in the approved plan, `harmonic-nibbling-blossom`):
+- **Auth model**: three tiers — Tenant (`X-API-Key`, unchanged), Console
+  (JWT session from email/password login via `Auth.login`, replacing
+  `ADMIN_MASTER_KEY`/`X-Admin-Key`), and Public (`/api/v1/setup`,
+  `/api/v1/auth`'s `login`). `_processor.tsi` entries gained a third
+  pipe-delimited field (`class|AUTH_MODE`) so `InterceptingFilter` can
+  dispatch per-path instead of hardcoding one admin path.
+- **Schema**: `accounts` dropped `app_id` — one global, organization-wide
+  chart. New `operators` table (Admin/Operator roles, BCrypt password
+  hashes). `journal_entries` gained `entry_type`/`reverses_entry_id`/
+  `posted_by_user_id` for reversals; hash chain/`sequence_number` stayed
+  per-`app_id` (a reversal is just the next entry in that App's chain). New
+  `reversal_requests` table for the maker-checker workflow.
+- **Reversal channel split**: an App reversing its own entry via
+  `reverse_entry` (`X-API-Key`) posts immediately — no approval step, same
+  trust level `post_entry` already has. Console-initiated reversals
+  (`request_reversal`/`approve_reversal`/`reject_reversal`) require a
+  *different* Admin to approve before the offsetting entry posts.
+- **New modules**: `Setup` (one-time bootstrap), `Auth` (login/logout/me),
+  `Users` (Admin-only operator management) — plus `web/console/setup/`,
+  `web/console/users.html`, and `web/tour/index.html`.
+- **Reports** moved from tenant-API-key-accessible to console-session-only,
+  org-wide by default with an optional `app_id` filter; gained
+  `export_entries` (raw journal-entries CSV download).

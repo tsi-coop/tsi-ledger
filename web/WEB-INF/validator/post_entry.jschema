@@ -3,6 +3,7 @@
   "type": "object",
   "properties": {
     "_func": { "type": "string" },
+    "app_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
     "reference_id": { "type": "string", "minLength": 1, "maxLength": 128 },
     "description": { "type": "string", "minLength": 1 },
     "posted_at": { "type": "string", "minLength": 1 },

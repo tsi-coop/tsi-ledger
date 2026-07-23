@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Users - TSI Ledger Ops Console</title>
+  <link rel="stylesheet" href="assets/console.css">
+</head>
+<body>
+<script src="assets/console.js"></script>
+<script>
+  const content = renderShell('users', 'Users', 'Configure who can sign into the Ops Console - Admins and Operators. Admin only.');
+
+  content.innerHTML = `
+    <div class="card">
+      <h2>
+        Operators
+        <button class="primary" id="new-user-btn">+ New Operator</button>
+      </h2>
+      <div id="users-error"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th></th></tr></thead>
+          <tbody id="users-body"><tr class="empty-row"><td colspan="6">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-overlay" id="create-modal">
+      <div class="modal">
+        <h2>New Operator</h2>
+        <form id="create-form">
+          <div class="field"><label for="new-name">Full Name</label><input id="new-name" required maxlength="128"></div>
+          <div class="field"><label for="new-email">Email</label><input id="new-email" type="email" required></div>
+          <div class="field">
+            <label for="new-role">Role</label>
+            <select id="new-role"><option value="OPERATOR">Operator</option><option value="ADMIN">Admin</option></select>
+          </div>
+          <div class="field"><label for="new-password">Initial Password</label><input id="new-password" type="password" required minlength="12" placeholder="Minimum 12 characters"></div>
+          <div class="modal-actions">
+            <button type="button" onclick="closeModal('create-modal')">Cancel</button>
+            <button type="submit" class="primary">Create</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="manage-modal">
+      <div class="modal">
+        <h2 id="manage-title">Manage Operator</h2>
+        <div id="manage-body"></div>
+        <div class="modal-actions"><button onclick="closeModal('manage-modal')">Close</button></div>
+      </div>
+    </div>
+  `);
+
+  function openModal(id) { qs(id).classList.add('open'); }
+  function closeModal(id) { qs(id).classList.remove('open'); }
+
+  let usersCache = [];
+
+  async function loadUsers() {
+    qs('users-error').innerHTML = '';
+    try {
+      usersCache = await consoleApi('/api/v1/users', 'list_operators');
+      qs('users-body').innerHTML = usersCache.length === 0
+        ? '<tr class="empty-row"><td colspan="6">No operators yet.</td></tr>'
+        : usersCache.map(u => `
+          <tr>
+            <td>${esc(u.name)}</td>
+            <td>${esc(u.email)}</td>
+            <td><span class="badge ${u.role === 'ADMIN' ? 'blue' : 'gray'}">${esc(u.role)}</span></td>
+            <td>${u.status === 'ACTIVE' ? '<span class="badge green">Active</span>' : '<span class="badge red">Inactive</span>'}</td>
+            <td>${fmtDate(u.last_login_at)}</td>
+            <td><button class="small" onclick="openManage('${esc(u.id)}')">Manage</button></td>
+          </tr>`).join('');
+    } catch (e) {
+      qs('users-error').innerHTML = `<div class="alert error">${esc(e.message)}</div>`;
+    }
+  }
+
+  qs('new-user-btn').addEventListener('click', () => {
+    qs('new-name').value = ''; qs('new-email').value = ''; qs('new-password').value = ''; qs('new-role').value = 'OPERATOR';
+    openModal('create-modal');
+  });
+
+  qs('create-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await consoleApi('/api/v1/users', 'create_operator', {
+        name: qs('new-name').value.trim(),
+        email: qs('new-email').value.trim(),
+        password: qs('new-password').value,
+        role: qs('new-role').value
+      });
+      closeModal('create-modal');
+      loadUsers();
+    } catch (err) {
+      alert('Failed to create operator: ' + err.message);
+    }
+  });
+
+  function openManage(id) {
+    const u = usersCache.find(x => x.id === id);
+    if (!u) return;
+    const isMe = currentUser && currentUser.user_id === id;
+    qs('manage-title').textContent = u.name;
+    qs('manage-body').innerHTML = `
+      <p class="muted mono">${esc(u.email)}</p>
+      <div class="field">
+        <label for="manage-role">Role</label>
+        <select id="manage-role"><option value="OPERATOR" ${u.role === 'OPERATOR' ? 'selected' : ''}>Operator</option><option value="ADMIN" ${u.role === 'ADMIN' ? 'selected' : ''}>Admin</option></select>
+      </div>
+      <button onclick="saveRole('${id}')">Save Role</button>
+
+      <div class="section-gap">
+        <h2 style="font-size:0.95rem">Reset Password</h2>
+        <div class="field-row">
+          <input type="password" id="manage-new-password" placeholder="New password (min 12 chars)" minlength="12">
+          <button onclick="resetPassword('${id}')">Reset</button>
+        </div>
+      </div>
+
+      <div class="section-gap">
+        <h2 style="font-size:0.95rem">Danger Zone</h2>
+        <button class="danger" ${u.status !== 'ACTIVE' || isMe ? 'disabled' : ''} onclick="deactivate('${id}')">Deactivate</button>
+        ${isMe ? '<p class="hint">You cannot deactivate your own account.</p>' : ''}
+      </div>
+    `;
+    openModal('manage-modal');
+  }
+
+  async function saveRole(id) {
+    try {
+      await consoleApi('/api/v1/users', 'update_operator', { operator_id: id, role: qs('manage-role').value });
+      closeModal('manage-modal');
+      loadUsers();
+    } catch (e) { alert('Update failed: ' + e.message); }
+  }
+
+  async function resetPassword(id) {
+    const pw = qs('manage-new-password').value;
+    if (!pw || pw.length < 12) { alert('New password must be at least 12 characters.'); return; }
+    try {
+      await consoleApi('/api/v1/users', 'reset_password', { operator_id: id, new_password: pw });
+      closeModal('manage-modal');
+      alert('Password reset. Share the new password with the operator through a secure channel.');
+    } catch (e) { alert('Reset failed: ' + e.message); }
+  }
+
+  async function deactivate(id) {
+    if (!confirm('Deactivate this operator? They will no longer be able to sign in.')) return;
+    try {
+      await consoleApi('/api/v1/users', 'deactivate_operator', { operator_id: id });
+      closeModal('manage-modal');
+      loadUsers();
+    } catch (e) { alert('Deactivate failed: ' + e.message); }
+  }
+
+  meReady.then(loadUsers);
+</script>
+</body>
+</html>
