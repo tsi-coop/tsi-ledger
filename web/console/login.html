@@ -3,14 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TSI Ledger - Ops Console Login</title>
+  <title>TSI Ledger - Login</title>
   <link rel="stylesheet" href="assets/console.css">
   <style>
     body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
     .login-card { width: 100%; max-width: 380px; }
     .login-card h1 { text-align: center; margin-bottom: 4px; }
-    .login-card .tagline { text-align: center; color: var(--ink); font-size: 0.85rem; font-weight: 600; margin: 0 0 6px; }
-    .login-card .sub { text-align: center; color: var(--muted); margin-bottom: 24px; }
+    .login-card .tagline { text-align: center; color: var(--ink); font-size: 0.85rem; font-weight: 600; margin: 0 0 24px; }
     .login-card button { width: 100%; justify-content: center; margin-top: 6px; }
   </style>
 </head>
@@ -19,7 +18,6 @@
 <div class="card login-card">
   <h1>TSI Ledger</h1>
   <p class="tagline">An open-source API first double entry accounting engine</p>
-  <p class="sub">Ops Console</p>
 
   <div id="login-error" class="alert error" style="display:none"></div>
   <div id="login-loading" class="spinner">Checking system status…</div>

@@ -177,7 +177,7 @@ function renderShell(activeKey, pageTitle, pageSub) {
 
   loadMe().then((me) => {
     if (!me) return;
-    qs('shell-user').innerHTML = `<strong style="color:#e2e8f0">${esc(me.name)}</strong><br>${esc(me.role)}`;
+    qs('shell-user').innerHTML = `<strong style="color:#334155">${esc(me.name)}</strong><br>${esc(me.role)}`;
     if (me.role !== 'ADMIN') {
       qs('shell-nav').querySelectorAll('a[data-admin-only="true"]').forEach(a => a.style.display = 'none');
     }

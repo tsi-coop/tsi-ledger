@@ -1,20 +1,27 @@
-/* TSI Ledger  -  Ops Console shared styles. Self-hosted (no CDN): the API's
+/* TSI Ledger - Ops Console shared styles. Self-hosted (no CDN): the API's
    CSP wouldn't allow one anyway, and this stays usable with no internet
-   egress from the container. */
+   egress from the container.
+
+   Palette/typography intentionally matches TSI DPDP CMS's console (teal
+   primary #006A67, light mint background, light sidebar with a soft right
+   shadow, bold tracking-tight headings) so the two products read as one
+   family, without pulling in DPDP's Tailwind CDN dependency. */
 
 :root {
-  --primary: #1d4ed8;
-  --primary-dark: #1e40af;
-  --accent: #059669;
+  --primary: #006A67;
+  --primary-dark: #004d4a;
+  --accent: #008D8A;
   --danger: #dc2626;
   --warning: #b45309;
-  --ink: #0f172a;
+  --ink: #1e293b;
   --muted: #64748b;
   --border: #e2e8f0;
-  --bg: #f8fafc;
+  --bg: #f4fbf9;
   --card: #ffffff;
-  --radius: 10px;
-  --sidebar-w: 230px;
+  --sidebar-bg: #f8fafc;
+  --nav-hover-bg: #e5f5f4;
+  --radius: 8px;
+  --sidebar-w: 250px;
 }
 
 * { box-sizing: border-box; }
@@ -23,7 +30,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   font-size: 14px;
   line-height: 1.5;
 }
@@ -39,8 +46,10 @@ a:hover { text-decoration: underline; }
   position: fixed;
   top: 0; left: 0; bottom: 0;
   width: var(--sidebar-w);
-  background: var(--ink);
-  color: #cbd5e1;
+  background: var(--sidebar-bg);
+  color: #4a5568;
+  border-right: 1px solid var(--border);
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
   z-index: 50;
@@ -52,24 +61,28 @@ a:hover { text-decoration: underline; }
 .shell-brand {
   padding: 20px 18px;
   font-weight: 700;
-  font-size: 1.05rem;
-  color: #fff;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  font-size: 1.15rem;
+  color: var(--primary);
+  border-bottom: 1px solid var(--border);
 }
-.shell-brand span { color: #93c5fd; }
+.shell-brand span { color: var(--accent); }
 
 .shell-nav { flex: 1; padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; }
 .shell-nav a {
-  color: #cbd5e1;
+  color: #4a5568;
   text-decoration: none;
-  padding: 9px 12px;
-  border-radius: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
   font-weight: 500;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
-.shell-nav a:hover { background: rgba(255,255,255,0.08); color: #fff; }
-.shell-nav a.active { background: var(--primary); color: #fff; }
+.shell-nav a:hover, .shell-nav a.active {
+  background: var(--nav-hover-bg);
+  color: var(--primary);
+  font-weight: 600;
+}
 
-.shell-foot { padding: 14px; border-top: 1px solid rgba(255,255,255,0.08); }
+.shell-foot { padding: 14px; border-top: 1px solid var(--border); }
 .shell-foot button { width: 100%; }
 
 .shell-topbar {
@@ -83,7 +96,7 @@ a:hover { text-decoration: underline; }
   top: 0;
   z-index: 40;
 }
-.shell-topbar button { background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--ink); }
+.shell-topbar button { background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--primary); }
 
 .shell-backdrop {
   display: none;
@@ -103,8 +116,8 @@ main.shell-main { padding: 28px 32px; max-width: 1100px; }
   main.shell-main { margin-left: 0; }
 }
 
-h1 { font-size: 1.5rem; margin: 0 0 4px; letter-spacing: -0.01em; }
-h2 { font-size: 1.1rem; margin: 0 0 12px; }
+h1 { font-size: 1.5rem; font-weight: 900; margin: 0 0 4px; letter-spacing: -0.02em; color: var(--ink); }
+h2 { font-size: 1.05rem; font-weight: 700; margin: 0 0 12px; letter-spacing: -0.01em; color: #334155; }
 .page-sub { color: var(--muted); margin: 0 0 24px; }
 
 /* ---- Cards, grids ---- */
@@ -113,6 +126,7 @@ h2 { font-size: 1.1rem; margin: 0 0 12px; }
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
   padding: 20px;
   margin-bottom: 20px;
 }
@@ -125,9 +139,12 @@ h2 { font-size: 1.1rem; margin: 0 0 12px; }
   border-left: 4px solid var(--primary);
   border-radius: var(--radius);
   padding: 16px 18px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.2s ease;
 }
+.stat-card:hover { box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08); }
 .stat-card .label { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
-.stat-card .value { font-size: 1.7rem; font-weight: 700; margin-top: 4px; }
+.stat-card .value { font-size: 1.7rem; font-weight: 700; margin-top: 4px; color: var(--ink); }
 .stat-card.ok { border-left-color: var(--accent); }
 .stat-card.bad { border-left-color: var(--danger); }
 
@@ -167,7 +184,7 @@ button, .btn {
 }
 button:hover { background: #f1f5f9; }
 button:disabled { opacity: 0.55; cursor: not-allowed; }
-button.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+button.primary { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 700; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
 button.primary:hover { background: var(--primary-dark); }
 button.danger { background: #fff; border-color: var(--danger); color: var(--danger); }
 button.danger:hover { background: #fef2f2; }
@@ -178,14 +195,14 @@ button.small { padding: 5px 10px; font-size: 0.78rem; }
 
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.86rem; vertical-align: top; }
-th { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; }
+th { color: var(--muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 800; }
 tbody tr:hover { background: #f8fafc; }
 .table-wrap { overflow-x: auto; }
 .empty-row td { text-align: center; color: var(--muted); padding: 28px; }
 
 /* ---- Badges / pills ---- */
 
-.badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; }
+.badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; }
 .badge.green { background: #dcfce7; color: #166534; }
 .badge.red { background: #fee2e2; color: #991b1b; }
 .badge.gray { background: #f1f5f9; color: #475569; }
@@ -204,23 +221,23 @@ tbody tr:hover { background: #f8fafc; }
 
 .modal-overlay {
   display: none;
-  position: fixed; inset: 0; background: rgba(15,23,42,0.55);
+  position: fixed; inset: 0; background: rgba(15,23,42,0.7);
   align-items: center; justify-content: center; z-index: 200; padding: 16px;
 }
 .modal-overlay.open { display: flex; }
 .modal {
-  background: #fff; border-radius: 14px; padding: 26px;
+  background: #fff; border-radius: 1rem; padding: 32px;
   max-width: 560px; width: 100%; max-height: 88vh; overflow-y: auto;
-  box-shadow: 0 24px 48px rgba(0,0,0,0.25);
+  box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
 }
-.modal h2 { margin-top: 0; }
+.modal h2 { margin-top: 0; font-weight: 900; letter-spacing: -0.01em; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 
 /* ---- Key display box (one-time secrets) ---- */
 
 .key-box {
   display: flex; align-items: center; gap: 8px;
-  background: #0f172a; color: #86efac;
+  background: #0f172a; color: #5eead4;
   padding: 10px 12px; border-radius: 8px; margin: 8px 0;
   font-family: ui-monospace, monospace; font-size: 0.82rem;
   overflow-x: auto; white-space: nowrap;
