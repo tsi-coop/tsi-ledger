@@ -54,6 +54,17 @@
         <div class="modal-actions"><button onclick="closeModal('manage-modal')">Close</button></div>
       </div>
     </div>
+
+    <div class="modal-overlay" id="reset-key-modal">
+      <div class="modal">
+        <h2>Password Reset Key</h2>
+        <div class="alert warn">Shown once - store it now. It cannot be retrieved again; only a hash is kept.
+          Share it with the operator through a secure channel - they'll enter it, along with their email and a
+          new password, on the console's "Reset with key" page. It expires in 24 hours.</div>
+        <div id="reset-key-body"></div>
+        <div class="modal-actions"><button onclick="closeModal('reset-key-modal')">Done</button></div>
+      </div>
+    </div>
   `);
 
   function openModal(id) { qs(id).classList.add('open'); }
@@ -121,6 +132,13 @@
           <input type="password" id="manage-new-password" placeholder="New password (min 12 chars)" minlength="12">
           <button onclick="resetPassword('${id}')">Reset</button>
         </div>
+        <p class="hint">Sets the password directly - you'll need to tell the operator the new password yourself.</p>
+      </div>
+
+      <div class="section-gap">
+        <h2 style="font-size:0.95rem">Password Reset Key</h2>
+        <button onclick="generateResetKey('${id}')">Generate Reset Key</button>
+        <p class="hint">Issues a one-time key the operator redeems themselves, without you ever knowing their new password.</p>
       </div>
 
       <div class="section-gap">
@@ -148,6 +166,22 @@
       closeModal('manage-modal');
       alert('Password reset. Share the new password with the operator through a secure channel.');
     } catch (e) { alert('Reset failed: ' + e.message); }
+  }
+
+  async function generateResetKey(id) {
+    try {
+      const result = await consoleApi('/api/v1/users', 'generate_reset_key', { operator_id: id });
+      closeModal('manage-modal');
+      qs('reset-key-body').innerHTML = `
+        <label>Reset Key</label>
+        <div class="key-box">
+          <span style="overflow:hidden;text-overflow:ellipsis">${esc(result.reset_key)}</span>
+          <button class="small" onclick="copyText('${esc(result.reset_key)}', this)">Copy</button>
+        </div>
+        <p class="hint">Expires ${fmtDate(result.expires_at)}.</p>
+      `;
+      openModal('reset-key-modal');
+    } catch (e) { alert('Could not generate reset key: ' + e.message); }
   }
 
   async function deactivate(id) {

@@ -34,6 +34,7 @@ public class Auth implements Action {
                 case "login": handleLogin(input, res, req); break;
                 case "logout": handleLogout(res); break;
                 case "me": handleMe(res, req); break;
+                case "reset_with_key": handleResetWithKey(input, res, req); break;
                 default:
                     OutputProcessor.errorResponse(res, 400, "Bad Request", "Unknown function: " + func, req.getRequestURI());
             }
@@ -101,6 +102,71 @@ public class Auth implements Action {
             output.put("name", name);
             output.put("email", email);
             output.put("role", role);
+            OutputProcessor.send(res, 200, output);
+        } finally {
+            if (pool != null) pool.cleanup(null, null, conn);
+        }
+    }
+
+    /**
+     * PUBLIC (unauthenticated) redemption of an Admin-issued reset key (see
+     * Users.generate_reset_key) - the self-service half of the flow, for an
+     * Operator who is locked out and can't reach change_own_password. The
+     * key is single-use: a successful redemption clears reset_key_hash so it
+     * can't be replayed, and the same generic error covers "no such email",
+     * "no key set", "expired" and "wrong key" so this endpoint can't be used
+     * to enumerate operator accounts.
+     */
+    private void handleResetWithKey(JSONObject input, HttpServletResponse res, HttpServletRequest req) throws SQLException {
+        String email = (String) input.get("email");
+        String resetKey = (String) input.get("reset_key");
+        String newPassword = (String) input.get("new_password");
+        if (email == null || resetKey == null || newPassword == null || newPassword.length() < 12) {
+            OutputProcessor.errorResponse(res, 400, "Bad Request",
+                    "email, reset_key, and new_password (>= 12 chars) are required.", req.getRequestURI());
+            return;
+        }
+        email = email.trim().toLowerCase();
+        String keyHash = InputProcessor.sha256Hex(resetKey.trim());
+
+        PoolDB pool = null; Connection conn = null;
+        try {
+            pool = new PoolDB();
+            conn = pool.getConnection();
+
+            UUID userId = null; String status = null, storedKeyHash = null;
+            java.sql.Timestamp expiresAt = null;
+            try (PreparedStatement pstmt = conn.prepareStatement(
+                    "SELECT id, status, reset_key_hash, reset_key_expires_at FROM operators WHERE email = ?")) {
+                pstmt.setString(1, email);
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (rs.next()) {
+                        userId = UUID.fromString(rs.getString("id"));
+                        status = rs.getString("status");
+                        storedKeyHash = rs.getString("reset_key_hash");
+                        expiresAt = rs.getTimestamp("reset_key_expires_at");
+                    }
+                }
+            }
+
+            boolean valid = userId != null && "ACTIVE".equals(status) && storedKeyHash != null
+                    && storedKeyHash.equals(keyHash) && expiresAt != null && expiresAt.toInstant().isAfter(java.time.Instant.now());
+            if (!valid) {
+                OutputProcessor.errorResponse(res, 401, "Unauthorized", "Invalid or expired reset key.", req.getRequestURI());
+                return;
+            }
+
+            String newHash = new PasswordHasher().hashPassword(newPassword);
+            try (PreparedStatement pstmt = conn.prepareStatement(
+                    "UPDATE operators SET password_hash = ?, reset_key_hash = NULL, reset_key_expires_at = NULL, " +
+                    "last_updated_at = now() WHERE id = ?")) {
+                pstmt.setString(1, newHash);
+                pstmt.setObject(2, userId);
+                pstmt.executeUpdate();
+            }
+
+            JSONObject output = new JSONObject();
+            output.put("password_reset", true);
             OutputProcessor.send(res, 200, output);
         } finally {
             if (pool != null) pool.cleanup(null, null, conn);

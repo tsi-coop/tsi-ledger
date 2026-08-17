@@ -39,9 +39,13 @@ import java.util.UUID;
  *
  * balance_sheet totals only ASSET/LIABILITY/EQUITY accounts, matching FSD
  * 6.2's formula (Assets = Liabilities + Equity) literally — REVENUE/EXPENSE
- * feed an income statement, which the FSD doesn't specify an endpoint for,
- * and there's no closing-entry mechanism defined anywhere to fold them into
- * Equity. trial_balance, by contrast, lists every account.
+ * still have no closing-entry mechanism to fold them into Equity, so a
+ * balance_sheet run mid-period won't balance until income_statement's net
+ * income is closed out by a manual journal entry; that gap is documented
+ * inline in handleBalanceSheet, not solved here. income_statement instead
+ * sums REVENUE/EXPENSE activity *within* a date range (unlike the other two
+ * reports, which are cumulative as-of a point in time), since P&L is a
+ * period measure, not a snapshot. trial_balance lists every account.
  */
 public class Reports implements Action {
 
@@ -54,6 +58,7 @@ public class Reports implements Action {
             switch (func.toLowerCase()) {
                 case "trial_balance": handleTrialBalance(input, res, req); break;
                 case "balance_sheet": handleBalanceSheet(input, res, req); break;
+                case "income_statement": handleIncomeStatement(input, res, req); break;
                 case "export_entries": handleExportEntries(input, res, req); break;
                 default:
                     OutputProcessor.errorResponse(res, 400, "Bad Request", "Unknown function: " + func, req.getRequestURI());
@@ -177,6 +182,73 @@ public class Reports implements Action {
         }
     }
 
+    /**
+     * Income statement (P&amp;L) — sums REVENUE/EXPENSE activity posted within
+     * [date_from, date_to], both optional and both inclusive whole calendar
+     * days (omit date_from for life-to-date, omit date_to for "through now").
+     * Unlike trial_balance/balance_sheet this is a period total, not a
+     * cumulative as-of balance, since P&amp;L resets every period rather than
+     * accumulating like a real account balance would.
+     */
+    private void handleIncomeStatement(JSONObject input, HttpServletResponse res, HttpServletRequest req) throws Exception {
+        String dateFromRaw = (String) input.get("date_from");
+        String dateToRaw = (String) input.get("date_to");
+        Instant fromInclusive = parseAsOfDateLowerBound(dateFromRaw);
+        if (dateFromRaw != null && fromInclusive == null) {
+            OutputProcessor.errorResponse(res, 400, "Bad Request", "date_from must be a valid calendar date (YYYY-MM-DD).", req.getRequestURI());
+            return;
+        }
+        Instant toExclusiveUpper = parseAsOfDateUpperBound(dateToRaw);
+        if (dateToRaw != null && toExclusiveUpper == null) {
+            OutputProcessor.errorResponse(res, 400, "Bad Request", "date_to must be a valid calendar date (YYYY-MM-DD).", req.getRequestURI());
+            return;
+        }
+        if (fromInclusive != null && toExclusiveUpper != null && !fromInclusive.isBefore(toExclusiveUpper)) {
+            OutputProcessor.errorResponse(res, 400, "Bad Request", "date_from must be on or before date_to.", req.getRequestURI());
+            return;
+        }
+        UUID appIdFilter = parseOptionalAppId(input, res, req);
+        if (input.get("app_id") != null && appIdFilter == null) return;
+
+        PoolDB pool = null; Connection conn = null;
+        try {
+            pool = new PoolDB();
+            conn = pool.getConnection();
+            List<AccountBalance> balances = fetchPeriodAccountBalances(conn, appIdFilter, fromInclusive, toExclusiveUpper);
+
+            JSONArray revenue = new JSONArray();
+            JSONArray expense = new JSONArray();
+            BigDecimal revenueTotal = BigDecimal.ZERO;
+            BigDecimal expenseTotal = BigDecimal.ZERO;
+
+            for (AccountBalance b : balances) {
+                boolean naturalDebit = "DEBIT".equals(AccountingRules.naturalBalance(b.accountType));
+                BigDecimal activity = naturalDebit ? b.debitTotal.subtract(b.creditTotal) : b.creditTotal.subtract(b.debitTotal);
+
+                JSONObject row = new JSONObject();
+                row.put("account_code", b.accountCode);
+                row.put("account_name", b.accountName);
+                row.put("amount", activity);
+
+                if ("REVENUE".equals(b.accountType)) { revenue.add(row); revenueTotal = revenueTotal.add(activity); }
+                else { expense.add(row); expenseTotal = expenseTotal.add(activity); }
+            }
+
+            JSONObject output = new JSONObject();
+            output.put("date_from", dateFromRaw);
+            output.put("date_to", dateToRaw);
+            output.put("app_id", appIdFilter != null ? appIdFilter.toString() : null);
+            output.put("revenue", revenue);
+            output.put("expense", expense);
+            output.put("revenue_total", revenueTotal);
+            output.put("expense_total", expenseTotal);
+            output.put("net_income", revenueTotal.subtract(expenseTotal));
+            OutputProcessor.send(res, 200, output);
+        } finally {
+            if (pool != null) pool.cleanup(null, null, conn);
+        }
+    }
+
     /** Raw journal-entries CSV dump — one row per entry_lines leg, joined to its parent entry/account/app. */
     private void handleExportEntries(JSONObject input, HttpServletResponse res, HttpServletRequest req) throws Exception {
         UUID appIdFilter = parseOptionalAppId(input, res, req);
@@ -267,6 +339,47 @@ public class Reports implements Action {
         return balances;
     }
 
+    /** Same shape as fetchAccountBalances, but restricted to REVENUE/EXPENSE and windowed to
+     * [fromInclusive, toExclusiveUpper) instead of cumulative-since-inception — the period-total
+     * query income_statement needs, as opposed to the as-of-a-point-in-time balance the other reports need. */
+    private List<AccountBalance> fetchPeriodAccountBalances(Connection conn, UUID appIdFilter, Instant fromInclusive, Instant toExclusiveUpper) throws SQLException {
+        String sql =
+                "SELECT a.account_code, a.account_name, a.account_type, " +
+                "COALESCE(SUM(CASE WHEN v.line_type = 'DEBIT' THEN v.amount ELSE 0 END), 0) AS debit_total, " +
+                "COALESCE(SUM(CASE WHEN v.line_type = 'CREDIT' THEN v.amount ELSE 0 END), 0) AS credit_total " +
+                "FROM accounts a " +
+                "LEFT JOIN (" +
+                "  SELECT el.account_id, el.line_type, el.amount FROM entry_lines el " +
+                "  JOIN journal_entries je ON je.id = el.entry_id " +
+                "  WHERE 1=1" + (appIdFilter != null ? " AND je.app_id = ?" : "") +
+                (fromInclusive != null ? " AND je.posted_at >= ?" : "") +
+                (toExclusiveUpper != null ? " AND je.posted_at < ?" : "") +
+                ") v ON v.account_id = a.id " +
+                "WHERE a.account_type IN ('REVENUE', 'EXPENSE') " +
+                "GROUP BY a.id, a.account_code, a.account_name, a.account_type " +
+                "ORDER BY a.account_type, a.account_code";
+
+        List<AccountBalance> balances = new ArrayList<>();
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            int i = 1;
+            if (appIdFilter != null) pstmt.setObject(i++, appIdFilter);
+            if (fromInclusive != null) pstmt.setTimestamp(i++, Timestamp.from(fromInclusive));
+            if (toExclusiveUpper != null) pstmt.setTimestamp(i++, Timestamp.from(toExclusiveUpper));
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    AccountBalance b = new AccountBalance();
+                    b.accountCode = rs.getString("account_code");
+                    b.accountName = rs.getString("account_name");
+                    b.accountType = rs.getString("account_type");
+                    b.debitTotal = rs.getBigDecimal("debit_total");
+                    b.creditTotal = rs.getBigDecimal("credit_total");
+                    balances.add(b);
+                }
+            }
+        }
+        return balances;
+    }
+
     private UUID parseOptionalAppId(JSONObject input, HttpServletResponse res, HttpServletRequest req) {
         Object raw = input.get("app_id");
         if (raw == null) return null;
@@ -283,6 +396,16 @@ public class Reports implements Action {
         if (raw == null) return null;
         try {
             return LocalDate.parse(raw).plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    /** Calendar date's inclusive lower bound — the start of that day UTC — pairs with parseAsOfDateUpperBound above. */
+    private static Instant parseAsOfDateLowerBound(String raw) {
+        if (raw == null) return null;
+        try {
+            return LocalDate.parse(raw).atStartOfDay(ZoneOffset.UTC).toInstant();
         } catch (DateTimeParseException e) {
             return null;
         }

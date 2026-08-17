@@ -17,13 +17,19 @@ import java.util.UUID;
 
 /**
  * Chart of Accounts — ONE table, shared by the whole organization (TENANT_OR_
- * CONSOLE auth mode). create_account/deactivate_account require the console
- * Admin role: the COA is structural, organization-wide data, not something an
- * individual App or Operator edits. list_accounts/get_account stay readable
- * either way — Apps may still validate account codes programmatically via
- * their API key, and console Operators can browse read-only — matching "no
- * COA access via keys **on the UI**" without also cutting off legitimate
- * server-to-server reads.
+ * CONSOLE auth mode). create_account/deactivate_account/activate_account
+ * require the console Admin role: the COA is structural, organization-wide
+ * data, not something an individual App or Operator edits. list_accounts/
+ * get_account stay readable either way — Apps may still validate account
+ * codes programmatically via their API key, and console Operators can browse
+ * read-only — matching "no COA access via keys **on the UI**" without also
+ * cutting off legitimate server-to-server reads.
+ *
+ * activate_account exists because deactivation here is reversible, unlike
+ * App.deactivate_app (which also revokes API keys — those can't be
+ * un-revoked, so that deactivation is deliberately one-way). An account has
+ * nothing analogous to revoke; flipping is_active back on doesn't undo or
+ * hide any history, it just re-permits new postings against it.
  */
 public class Accounts implements Action {
 
@@ -35,7 +41,8 @@ public class Accounts implements Action {
             JSONObject input = InputProcessor.getInput(req);
             String func = (String) input.get("_func");
 
-            boolean write = "create_account".equalsIgnoreCase(func) || "deactivate_account".equalsIgnoreCase(func);
+            boolean write = "create_account".equalsIgnoreCase(func) || "deactivate_account".equalsIgnoreCase(func)
+                    || "activate_account".equalsIgnoreCase(func);
             if (write && !InputProcessor.isAdmin(req)) {
                 OutputProcessor.errorResponse(res, 403, "Forbidden", "Admin role required.", req.getRequestURI());
                 return;
@@ -46,6 +53,7 @@ public class Accounts implements Action {
                 case "list_accounts": handleListAccounts(input, res, req); break;
                 case "get_account": handleGetAccount(input, res, req); break;
                 case "deactivate_account": handleDeactivateAccount(input, res, req); break;
+                case "activate_account": handleActivateAccount(input, res, req); break;
                 default:
                     OutputProcessor.errorResponse(res, 400, "Bad Request", "Unknown function: " + func, req.getRequestURI());
             }
@@ -165,6 +173,29 @@ public class Accounts implements Action {
             JSONObject output = new JSONObject();
             output.put("id", accountId.toString());
             output.put("is_active", false);
+            OutputProcessor.send(res, 200, output);
+        } finally {
+            if (pool != null) pool.cleanup(rs, pstmt, conn);
+        }
+    }
+
+    private void handleActivateAccount(JSONObject input, HttpServletResponse res, HttpServletRequest req) throws SQLException {
+        UUID accountId = UUID.fromString((String) input.get("account_id"));
+
+        PoolDB pool = null; Connection conn = null; PreparedStatement pstmt = null; ResultSet rs = null;
+        try {
+            pool = new PoolDB();
+            conn = pool.getConnection();
+            pstmt = conn.prepareStatement("UPDATE accounts SET is_active = TRUE WHERE id = ? RETURNING id");
+            pstmt.setObject(1, accountId);
+            rs = pstmt.executeQuery();
+            if (!rs.next()) {
+                OutputProcessor.errorResponse(res, 404, "Not Found", "Account not found.", req.getRequestURI());
+                return;
+            }
+            JSONObject output = new JSONObject();
+            output.put("id", accountId.toString());
+            output.put("is_active", true);
             OutputProcessor.send(res, 200, output);
         } finally {
             if (pool != null) pool.cleanup(rs, pstmt, conn);

@@ -18,6 +18,7 @@
         <h2>Account</h2>
         <pre id="view-modal-body" class="mono" style="white-space:pre-wrap"></pre>
         <div class="modal-actions">
+          <button id="view-activate-btn" style="display:none">Activate</button>
           <button class="danger" id="view-deactivate-btn" style="display:none">Deactivate</button>
           <button onclick="closeModal('view-modal')">Close</button>
         </div>
@@ -138,7 +139,14 @@
       const account = await consoleApi('/api/v1/accounts', 'get_account', { account_id: id });
       viewingAccountId = id;
       qs('view-modal-body').textContent = JSON.stringify(account, null, 2);
+      const activateBtn = qs('view-activate-btn');
       const deactivateBtn = qs('view-deactivate-btn');
+      if (isAdmin() && !account.is_active) {
+        activateBtn.style.display = 'inline-flex';
+        activateBtn.onclick = () => activateAccount(id);
+      } else {
+        activateBtn.style.display = 'none';
+      }
       if (isAdmin() && account.is_active) {
         deactivateBtn.style.display = 'inline-flex';
         deactivateBtn.onclick = () => deactivateAccount(id);
@@ -156,6 +164,14 @@
       closeModal('view-modal');
       loadAccounts();
     } catch (e) { alert('Deactivate failed: ' + e.message); }
+  }
+
+  async function activateAccount(id) {
+    try {
+      await consoleApi('/api/v1/accounts', 'activate_account', { account_id: id });
+      closeModal('view-modal');
+      loadAccounts();
+    } catch (e) { alert('Activate failed: ' + e.message); }
   }
 
   meReady.then(init);

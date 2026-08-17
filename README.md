@@ -32,9 +32,13 @@ Every journal entry is cryptographically chained to the one before it: each entr
 
 An App reversing its own entry via its API key can do so immediately. A console operator reversing a manually posted entry cannot: it goes through a reversal request that a second operator (or an Admin) must approve or reject, so no single person can unilaterally rewrite the books.
 
+### Self-service password recovery
+
+An Operator locked out of the console doesn't need an Admin to hand them a new password directly. An Admin issues a one-time reset key instead - only its hash is ever stored, and it's shown once - which the Operator redeems themselves, email + key + new password, at a public reset page.
+
 ### Real-time financial reports
 
-Trial balance and balance sheet are computed live from the ledger over the API, no month-end close required to know where things stand.
+Trial balance, balance sheet, and income statement are computed live from the ledger over the API, no month-end close required to know where things stand.
 
 ---
 
@@ -111,16 +115,36 @@ X-API-Key: <live-or-test-key>
 
 | Module | Functions |
 |--------|-----------|
-| `auth` | `login`, `logout`, `me` |
+| `auth` | `login`, `logout`, `me`, `reset_with_key` |
 | `setup` | `initial_setup`, `setup_status` |
 | `app` | `create_app`, `list_apps`, `get_app`, `rotate_api_key`, `revoke_api_key`, `deactivate_app` |
-| `accounts` | `create_account`, `list_accounts`, `get_account`, `deactivate_account` |
+| `accounts` | `create_account`, `list_accounts`, `get_account`, `deactivate_account`, `activate_account` |
 | `ledger` | `post_entry`, `list_entries`, `get_entry`, `reverse_entry`, `request_reversal`, `approve_reversal`, `reject_reversal`, `list_reversal_requests` |
-| `reports` | `trial_balance`, `balance_sheet`, `export_entries` |
+| `reports` | `trial_balance`, `balance_sheet`, `income_statement`, `export_entries` |
 | `audit` | `verify_audit` |
-| `users` | `create_operator`, `list_operators`, `get_operator`, `update_operator`, `deactivate_operator`, `reset_password`, `change_own_password` |
+| `users` | `create_operator`, `list_operators`, `get_operator`, `update_operator`, `deactivate_operator`, `reset_password`, `change_own_password`, `generate_reset_key` |
 
 Every function's input is validated against a JSON Schema in `web/WEB-INF/validator/` before the request reaches application code.
+
+---
+
+## Testing
+
+```bash
+mvn test
+```
+
+`HashChainTest` (`test/org/tsicoop/ledger/service/v1/`) is a pure unit test of the canonical-payload/hash-chain math — no database needed, always runs.
+
+`LedgerIntegrationTest` exercises `post_entry`/`reverse_entry` against a real Postgres (balance check, idempotency replay, and concurrent-post locking - the FOR UPDATE row lock that keeps two simultaneous posts to the same App from racing past each other). It skips itself with a clear message if no database is configured, so plain `mvn test` stays green. Point it at the docker-compose dev database:
+
+```bash
+POSTGRES_HOST=jdbc:postgresql://localhost:5438 POSTGRES_DB=tsi_ledger \
+POSTGRES_USER=tsi_ledger_admin POSTGRES_PASSWD=<your .env value> \
+TSI_LEDGER_ENV=local mvn test
+```
+
+Each test run creates its own App/Accounts fixtures under a random suffix and tears them down afterward, so it's safe to run against a database that already has real data in it.
 
 ---
 

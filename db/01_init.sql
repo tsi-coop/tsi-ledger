@@ -14,6 +14,13 @@
 -- manage other operators, and approve reversal requests. Operators browse
 -- the ledger/COA, post manual entries, and request reversals (see
 -- reversal_requests below for the maker-checker split).
+-- reset_key_hash/reset_key_expires_at back the Admin-issued self-service
+-- password reset key (Users.generate_reset_key / Auth.reset_with_key): an
+-- Admin mints a one-time key for an Operator who is locked out, shares it
+-- out of band, and the Operator redeems it themselves at a public console
+-- page without the Admin ever having to know or set their new password.
+-- Same hashed-lookup pattern as apps.api_key_*_hash - only the SHA-256 hash
+-- is persisted, and it's cleared (single-use) as soon as it's redeemed.
 CREATE TABLE operators (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(128) NOT NULL,
@@ -21,6 +28,8 @@ CREATE TABLE operators (
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(16) NOT NULL CHECK (role IN ('ADMIN', 'OPERATOR')),
     status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE')),
+    reset_key_hash CHAR(64),
+    reset_key_expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     last_login_at TIMESTAMP WITH TIME ZONE,
     last_updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()

@@ -9,7 +9,7 @@
 <body>
 <script src="assets/console.js"></script>
 <script>
-  const content = renderShell('reports', 'Reports', 'Trial balance and balance sheet, computed live from journal_entries/entry_lines - combined across all Apps by default.');
+  const content = renderShell('reports', 'Reports', 'Trial balance, balance sheet, and income statement, computed live from journal_entries/entry_lines - combined across all Apps by default.');
   content.innerHTML = `<div id="reports-app"></div>`;
 
   let appsCache = [];
@@ -36,8 +36,8 @@
       <div class="card">
         <h2>Balance Sheet</h2>
         <p class="hint" style="margin-top:-6px">Assets = Liabilities + Equity. Revenue/Expense accounts aren't
-          included - there's no closing-entry mechanism in this ledger to fold them into Equity, so they only
-          appear on the Trial Balance above.</p>
+          included - there's no closing-entry mechanism in this ledger to fold them into Equity, so they appear
+          on the Trial Balance above and on the Income Statement below instead.</p>
         <div class="field-row" style="align-items:end;max-width:560px">
           <div class="field"><label for="bs-app">App</label><select id="bs-app">${appOptions}</select></div>
           <div class="field">
@@ -47,6 +47,20 @@
           <div class="field"><button class="primary" id="bs-run">Run</button></div>
         </div>
         <div id="bs-result"></div>
+      </div>
+
+      <div class="card">
+        <h2>Income Statement</h2>
+        <p class="hint" style="margin-top:-6px">Revenue and Expense activity posted within a date range (a period
+          total, not a running balance) - both dates optional: leave From blank for life-to-date, leave To blank
+          for through now.</p>
+        <div class="field-row" style="align-items:end;max-width:720px">
+          <div class="field"><label for="is-app">App</label><select id="is-app">${appOptions}</select></div>
+          <div class="field"><label for="is-from">From (optional)</label><input id="is-from" type="date"></div>
+          <div class="field"><label for="is-to">To (optional)</label><input id="is-to" type="date"></div>
+          <div class="field"><button class="primary" id="is-run">Run</button></div>
+        </div>
+        <div id="is-result"></div>
       </div>
 
       <div class="card">
@@ -64,6 +78,7 @@
     `;
     qs('tb-run').addEventListener('click', runTrialBalance);
     qs('bs-run').addEventListener('click', runBalanceSheet);
+    qs('is-run').addEventListener('click', runIncomeStatement);
     qs('exp-run').addEventListener('click', runExport);
   }
 
@@ -146,6 +161,45 @@
             ? 'Balanced ✓ - Assets = Liabilities + Equity.'
             : `Not balanced (Assets ${fmtAmount(r.assets_total)} vs L+E ${fmtAmount(Number(r.liabilities_total) + Number(r.equity_total))}) - expected if Revenue/Expense activity hasn't been closed to Equity.`}
         </div>
+      `;
+    } catch (e) {
+      box.innerHTML = `<div class="alert error">${esc(e.message)}</div>`;
+    }
+  }
+
+  function incomeStatementSection(title, rows) {
+    return `
+      <h2 style="font-size:0.95rem;margin-top:18px">${esc(title)}</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Code</th><th>Name</th><th class="right">Amount</th></tr></thead>
+          <tbody>
+            ${rows.length === 0 ? '<tr class="empty-row"><td colspan="3">None.</td></tr>' : rows.map(a => `
+              <tr><td><code>${esc(a.account_code)}</code></td><td>${esc(a.account_name)}</td><td class="right">${fmtAmount(a.amount)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function runIncomeStatement() {
+    const box = qs('is-result');
+    box.innerHTML = '<p class="spinner">Loading…</p>';
+    try {
+      const params = {};
+      if (qs('is-from').value) params.date_from = qs('is-from').value;
+      if (qs('is-to').value) params.date_to = qs('is-to').value;
+      if (qs('is-app').value) params.app_id = qs('is-app').value;
+      const r = await consoleApi('/api/v1/reports', 'income_statement', params);
+
+      box.innerHTML = `
+        <div class="stat-grid">
+          <div class="stat-card"><div class="label">Revenue</div><div class="value">${fmtAmount(r.revenue_total)}</div></div>
+          <div class="stat-card"><div class="label">Expense</div><div class="value">${fmtAmount(r.expense_total)}</div></div>
+          <div class="stat-card ${Number(r.net_income) >= 0 ? 'ok' : 'bad'}"><div class="label">Net Income</div><div class="value">${fmtAmount(r.net_income)}</div></div>
+        </div>
+        ${incomeStatementSection('Revenue', r.revenue)}
+        ${incomeStatementSection('Expense', r.expense)}
       `;
     } catch (e) {
       box.innerHTML = `<div class="alert error">${esc(e.message)}</div>`;

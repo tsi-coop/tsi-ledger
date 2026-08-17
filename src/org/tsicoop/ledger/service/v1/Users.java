@@ -10,10 +10,13 @@ import org.tsicoop.ledger.framework.OutputProcessor;
 import org.tsicoop.ledger.framework.PasswordHasher;
 import org.tsicoop.ledger.framework.PoolDB;
 
+import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -25,6 +28,7 @@ import java.util.UUID;
 public class Users implements Action {
 
     private static final String UNIQUE_VIOLATION_SQLSTATE = "23505";
+    private static final long RESET_KEY_TTL_SECONDS = 24 * 60 * 60;
 
     @Override
     public void post(HttpServletRequest req, HttpServletResponse res) {
@@ -45,6 +49,7 @@ public class Users implements Action {
                 case "deactivate_operator": handleDeactivateOperator(input, res, req); break;
                 case "reset_password": handleResetPassword(input, res, req); break;
                 case "change_own_password": handleChangeOwnPassword(input, res, req); break;
+                case "generate_reset_key": handleGenerateResetKey(input, res, req); break;
                 default:
                     OutputProcessor.errorResponse(res, 400, "Bad Request", "Unknown function: " + func, req.getRequestURI());
             }
@@ -211,6 +216,60 @@ public class Users implements Action {
             return;
         }
         updatePasswordHash(res, req, id, newPassword);
+    }
+
+    /**
+     * Admin-only: mints a one-time reset key for an Operator locked out of
+     * their account, so the Admin can share it out of band without ever
+     * having to know or choose the Operator's new password themselves. Only
+     * the SHA-256 hash is persisted (see Auth.reset_with_key, which redeems
+     * it); the raw key is returned exactly once, here.
+     */
+    private void handleGenerateResetKey(JSONObject input, HttpServletResponse res, HttpServletRequest req) throws SQLException {
+        UUID id = UUID.fromString((String) input.get("operator_id"));
+        String rawKey = generateResetKey();
+        String keyHash = InputProcessor.sha256Hex(rawKey);
+        Timestamp expiresAt = Timestamp.from(Instant.now().plusSeconds(RESET_KEY_TTL_SECONDS));
+
+        PoolDB pool = null; Connection conn = null;
+        try {
+            pool = new PoolDB();
+            conn = pool.getConnection();
+            try (PreparedStatement pstmt = conn.prepareStatement(
+                    "UPDATE operators SET reset_key_hash = ?, reset_key_expires_at = ? WHERE id = ? " +
+                    "RETURNING id, email")) {
+                pstmt.setString(1, keyHash);
+                pstmt.setTimestamp(2, expiresAt);
+                pstmt.setObject(3, id);
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (!rs.next()) {
+                        OutputProcessor.errorResponse(res, 404, "Not Found", "Operator not found.", req.getRequestURI());
+                        return;
+                    }
+                    JSONObject output = new JSONObject();
+                    output.put("id", rs.getString("id"));
+                    output.put("email", rs.getString("email"));
+                    output.put("reset_key", rawKey);
+                    output.put("expires_at", expiresAt.toInstant().toString());
+                    output.put("warning", "Shown once - share it with the operator through a secure channel now. It cannot be retrieved again.");
+                    OutputProcessor.send(res, 200, output);
+                }
+            }
+        } finally {
+            if (pool != null) pool.cleanup(null, null, conn);
+        }
+    }
+
+    /** Human-typeable (Crockford-ish base32) reset key - short enough to read over a call, long enough (2^80 space) to resist guessing within the TTL. */
+    private static String generateResetKey() {
+        String symbols = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        SecureRandom random = new SecureRandom();
+        StringBuilder sb = new StringBuilder(20);
+        for (int i = 0; i < 16; i++) {
+            if (i > 0 && i % 4 == 0) sb.append('-');
+            sb.append(symbols.charAt(random.nextInt(symbols.length())));
+        }
+        return sb.toString();
     }
 
     private void handleChangeOwnPassword(JSONObject input, HttpServletResponse res, HttpServletRequest req) throws SQLException {

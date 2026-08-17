@@ -8,61 +8,82 @@ should be closed or explicitly deferred with a reason.
 
 `Users.change_own_password` exists as an API function with a validator
 schema (`web/WEB-INF/validator/change_own_password.jschema`), but no console
-page calls it. Only Admin-driven `reset_password` is wired up in
-`users.html`. An Operator has no way to change their own password without
-an Admin doing it for them.
+page calls it. An Operator who is still signed in has no way to change
+their own password without an Admin doing it for them.
 
 **Fix:** add a "change my password" action to the console (e.g. from the
 user menu / profile), calling the existing `change_own_password` function.
-No backend work needed, UI only.
+No backend work needed, UI only. (Separate from the locked-out case below,
+which is now handled.)
+
+**Done (2026-08-17):** the locked-out case - an Operator who can't sign in
+at all - is handled via an Admin-issued, single-use reset key:
+`Users.generate_reset_key` (Admin-only; `web/WEB-INF/validator/generate_reset_key.jschema`)
+mints a key, persists only its SHA-256 hash + a 24h expiry on `operators`,
+and returns the raw key once, wired up from the "Password Reset Key" section
+of the Manage Operator modal in `users.html`. `Auth.reset_with_key` (PUBLIC;
+`web/WEB-INF/validator/reset_with_key.jschema`) lets the Operator redeem it
+themselves - email + key + new password - at the new
+`web/console/reset-password.html`, linked from `login.html`. The key is
+cleared on redemption (single-use) and the schema addition
+(`operators.reset_key_hash` / `reset_key_expires_at`) lives in `db/01_init.sql`,
+which only runs on a fresh Postgres volume - existing dev databases need the
+two columns added by hand.
 
 ## 2. No automated test suite
 
-There are no JUnit/test files anywhere in the repo. Correctness of the
-hash-chain math, balance validation, reversal maker-checker flow, and report
-totals currently rests on manual testing and the reasoning left in code
-comments, not on regression tests.
+**Done (2026-08-17):** added a `test/` source tree (`pom.xml`'s
+`testSourceDirectory`, plus a `junit:junit:4.13.2` test-scope dependency and
+an explicit `maven-surefire-plugin:3.2.5` - the pre-existing default-bound
+2.12.4 couldn't resolve its JUnit4 provider offline). `mvn test` now runs:
 
-**Fix:** at minimum, unit tests for `HashChain` (canonical payload
-determinism, chain continuation) and `Ledger.post_entry`/`reverse_entry`
-(balance check, idempotency replay, concurrent-post locking), since these
-are the components a hash-chain integrity claim depends on.
+- `HashChainTest` - pure unit tests (no DB): canonical-payload determinism,
+  independence from submitted line order, sensitivity to every input field,
+  the payload-hash/block-hash formula against an independently computed
+  SHA-256, genesis hash, a 3-entry chain recomputing identically on a second
+  pass (what `verify_audit` relies on), tampering with an earlier entry
+  breaking every later block hash, and description/reference_id text that
+  can't break out of its JSON string.
+- `LedgerIntegrationTest` - `post_entry`/`reverse_entry` against a real
+  Postgres (balance check rejects/accepts, idempotency replay doesn't
+  double-post, 8 concurrent posts to the same App produce an unbroken
+  sequential hash chain via the `FOR UPDATE` app-row lock, and reversing
+  twice is blocked). Drives `Ledger.post(req, res)` directly through a
+  `java.lang.reflect.Proxy`-based `HttpServletRequest`/`Response` double
+  (`test/.../support/FakeHttp.java`) rather than pulling in a servlet
+  container or a mocking library. Self-skips via `Assume` with a clear
+  message when `POSTGRES_HOST` isn't set, so plain `mvn test` stays green
+  with no DB available; each run creates and tears down its own App/Accounts
+  fixtures under a random suffix. See the README's new Testing section for
+  how to point it at the docker-compose dev database.
+
+Not covered yet: `Reports`/`Accounts`/`Auth`/`Users` have no tests of their
+own - this closes the two components PENDING called out as the ones a
+hash-chain integrity claim actually depends on, not full coverage.
 
 ## 3. No income statement / P&L report
 
-`Reports.balance_sheet` only totals ASSET/LIABILITY/EQUITY accounts
-(documented in `Reports.java` as deliberate: there's no closing-entry
-mechanism to fold REVENUE/EXPENSE into Equity). This is a scope decision,
-not a bug, but "real-time financial reports" in the README may read as
-implying a P&L, which doesn't exist yet.
-
-**Fix:** either scope an income statement endpoint (sum REVENUE/EXPENSE
-over a date range) or make the reports section of the README explicit that
-only trial balance and balance sheet are currently available.
+**Done (2026-08-17):** added `Reports.income_statement` (CONSOLE auth,
+`web/WEB-INF/validator/income_statement.jschema`) - sums REVENUE/EXPENSE
+activity within an optional `[date_from, date_to]` window (both inclusive
+whole calendar days; omit either end for life-to-date / through-now),
+optionally scoped by `app_id`, and returns revenue/expense line items plus
+`revenue_total`/`expense_total`/`net_income`. Unlike `trial_balance`/
+`balance_sheet` (cumulative as-of-a-point-in-time balances), this is a
+period total, via the new `fetchPeriodAccountBalances` query. Wired up as
+an "Income Statement" card in `reports.html`. `balance_sheet` still
+excludes REVENUE/EXPENSE (unchanged, no closing-entry mechanism exists) -
+that activity now surfaces on the Trial Balance and here instead.
 
 ## 4. Accounts can be deactivated but never reactivated
 
-`Accounts.java` only exposes `deactivate_account`; there is no
-`activate_account` function, so a deactivated account is permanently
-deactivated. Unconfirmed whether this is intentional.
+**Done (2026-08-17):** added `Accounts.activate_account` (Admin-only, same
+auth tier as `deactivate_account`; `web/WEB-INF/validator/activate_account.jschema`)
+- flips `is_active` back to `TRUE`. Confirmed this one should be reversible,
+unlike `App.deactivate_app` (which also revokes API keys - irreversible by
+design, see the comment on `App.java`): an account has no analogous
+credential to revoke, so re-activating doesn't undo anything, it just
+re-permits new postings. Wired up as an "Activate" button in the Chart of
+Accounts view-account modal in `accounts.html`, mirroring the existing
+Deactivate button.
 
-**Fix:** confirm intent. If accidental, add `activate_account` (Admin-only,
-same auth tier as `deactivate_account`).
-
-## 5. Working-tree deletions of reference docs
-
-`docs/BUILD_PLAN.md`, `docs/TSI_Ledger_Integrated_Technical_Design.pdf`, and
-`docs/TSI_Ledger_Service_Functional_Specs.pdf` are deleted in the working
-tree (unstaged, not committed, not done in any session that touched this
-repo's README/design docs). Still recoverable:
-
-```bash
-git checkout -- docs/BUILD_PLAN.md "docs/TSI_Ledger_Integrated_Technical_Design.pdf" "docs/TSI_Ledger_Service_Functional_Specs.pdf"
-```
-
-**Fix:** confirm whether this was intentional; restore if not.
-
-## Not a gap, deferred by design
-
-- **Triple-entry accounting** — see `docs/TRIPLE_ENTRY_DESIGN.md`. Deliberately
-  not implemented or advertised in the README for now.

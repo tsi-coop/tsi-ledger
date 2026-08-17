@@ -102,6 +102,12 @@ public class Ledger implements Action {
             OutputProcessor.errorResponse(res, 400, "Bad Request", "posted_at must be an ISO-8601 timestamp.", req.getRequestURI());
             return;
         }
+        // Truncated to microseconds: Postgres TIMESTAMPTZ only stores microsecond precision, so a
+        // caller-supplied posted_at with finer (e.g. nanosecond) precision would otherwise get
+        // silently rounded on insert — the hash computed here, from the pre-insert value, would
+        // then never match what verify_audit recomputes from the post-insert (truncated) stored
+        // value. Same fix as postReversalEntry's Instant.now() truncation, below.
+        postedAt = postedAt.truncatedTo(java.time.temporal.ChronoUnit.MICROS);
 
         List<HashChain.Line> lines = new ArrayList<>();
         LinkedHashSet<String> requestedCodes = new LinkedHashSet<>();
@@ -366,7 +372,7 @@ public class Ledger implements Action {
             // one's committed reversal once it proceeds — closes the TOCTOU that a
             // lock taken only immediately before the insert would leave open.
             lockAppRow(conn, original.appId);
-            String blocked = validateReversible(conn, original);
+            String blocked = validateReversible(conn, original, null);
             if (blocked != null) {
                 conn.rollback();
                 OutputProcessor.errorResponse(res, 409, "Conflict", blocked, req.getRequestURI());
@@ -415,7 +421,7 @@ public class Ledger implements Action {
                 OutputProcessor.errorResponse(res, 404, "Not Found", "Entry not found.", req.getRequestURI());
                 return;
             }
-            String blocked = validateReversible(conn, original);
+            String blocked = validateReversible(conn, original, null);
             if (blocked != null) {
                 OutputProcessor.errorResponse(res, 409, "Conflict", blocked, req.getRequestURI());
                 return;
@@ -481,7 +487,10 @@ public class Ledger implements Action {
 
             OriginalEntry original = fetchOriginalEntry(conn, reqRow.originalEntryId);
             if (original != null) lockAppRow(conn, original.appId);
-            String blocked = original == null ? "Original entry not found." : validateReversible(conn, original);
+            // Exclude reqRow's own id: it's still PENDING at this point in the transaction
+            // (only flips to APPROVED below, after this check), so without excluding it
+            // every approval would see its own request and block itself.
+            String blocked = original == null ? "Original entry not found." : validateReversible(conn, original, requestId);
             if (blocked != null) {
                 conn.rollback();
                 OutputProcessor.errorResponse(res, 409, "Conflict", blocked, req.getRequestURI());
@@ -629,16 +638,27 @@ public class Ledger implements Action {
         }
     }
 
-    /** Returns a rejection message if the entry cannot be reversed, or null if it's clear to reverse. */
-    private String validateReversible(Connection conn, OriginalEntry original) throws SQLException {
+    /**
+     * Returns a rejection message if the entry cannot be reversed, or null if it's clear to
+     * reverse. excludeRequestId is non-null only when called from handleApproveReversal: that
+     * request's own reversal_requests row is still PENDING at this point in its own transaction
+     * (it only flips to APPROVED after this check passes), so without excluding it here every
+     * approval would find its own pending row and block itself — approve_reversal could never
+     * succeed for anyone. request_reversal/reverse_entry have no "own row" to exclude, so they
+     * pass null and this behaves exactly as before for them.
+     */
+    private String validateReversible(Connection conn, OriginalEntry original, UUID excludeRequestId) throws SQLException {
         if ("REVERSAL".equals(original.entryType)) {
             return "A reversal entry cannot itself be reversed.";
         }
-        try (PreparedStatement pstmt = conn.prepareStatement(
-                "SELECT 1 FROM journal_entries WHERE reverses_entry_id = ? " +
-                "UNION SELECT 1 FROM reversal_requests WHERE original_entry_id = ? AND status IN ('PENDING','APPROVED') LIMIT 1")) {
+        String sql = "SELECT 1 FROM journal_entries WHERE reverses_entry_id = ? " +
+                "UNION SELECT 1 FROM reversal_requests WHERE original_entry_id = ? AND status IN ('PENDING','APPROVED')" +
+                (excludeRequestId != null ? " AND id != ?" : "") +
+                " LIMIT 1";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setObject(1, original.id);
             pstmt.setObject(2, original.id);
+            if (excludeRequestId != null) pstmt.setObject(3, excludeRequestId);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) return "This entry has already been reversed or has a reversal in progress.";
             }
@@ -678,7 +698,11 @@ public class Ledger implements Action {
         ChainPosition pos = fetchChainPosition(conn, original.appId);
 
         String description = "Reversal of entry " + original.id + (reasonNote != null && !reasonNote.isBlank() ? ": " + reasonNote : "");
-        Instant postedAt = Instant.now();
+        // Truncated to microseconds: Postgres TIMESTAMPTZ only stores microsecond precision, so an
+        // untruncated Instant.now() (which usually carries nanosecond precision) gets silently
+        // rounded on insert — the hash computed here, from the pre-insert value, would then never
+        // match what verify_audit recomputes from the post-insert (truncated) stored value.
+        Instant postedAt = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         String canonicalPayload = HashChain.canonicalPayload(original.referenceId, description, postedAt, mirroredLines);
         String payloadHash = HashChain.entryPayloadHash(canonicalPayload);
         String blockHash = HashChain.blockHash(payloadHash, pos.previousBlockHash);
