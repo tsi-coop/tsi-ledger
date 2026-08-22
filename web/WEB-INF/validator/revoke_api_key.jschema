@@ -3,8 +3,7 @@
   "type": "object",
   "properties": {
     "_func": { "type": "string" },
-    "app_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
-    "key_env": { "type": "string", "enum": ["LIVE", "TEST", "live", "test"] }
+    "app_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" }
   },
-  "required": ["_func", "app_id", "key_env"]
+  "required": ["_func", "app_id"]
 }

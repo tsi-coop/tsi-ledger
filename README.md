@@ -22,7 +22,7 @@ Double-entry is not a convention here, it's a constraint the engine enforces. Ev
 
 ### Built-in multi-tenancy
 
-Each posting source (an HRMS, a commerce platform, a lending product, an agent) is provisioned as an **App** with its own API key pair, live and test. All Apps post against one shared, organization-wide Chart of Accounts, so the accounting team always has one ledger to look at instead of one per integration.
+Each posting source (an HRMS, a commerce platform, a lending product, an agent) is provisioned as an **App** with its own `API_KEY`/`API_SECRET` pair - `API_KEY` is a non-secret identifier, always visible in the console; `API_SECRET` is the actual credential, shown once. All Apps post against one shared, organization-wide Chart of Accounts, so the accounting team always has one ledger to look at instead of one per integration. An Admin can also grant a specific App (e.g. a Financials system) permission to manage the Chart of Accounts itself, via its own credentials, instead of every COA change requiring a console Admin session.
 
 ### Tamper-evident audit trail
 
@@ -108,8 +108,10 @@ All API calls are `POST /api/v1/{module}` with `Content-Type: application/json`.
 
 **Authentication for posting sources** (Apps/AI agents):
 ```
-X-API-Key: <live-or-test-key>
+X-API-Key: <key>
+X-API-Secret: <secret>
 ```
+`X-API-Key` is a non-secret identifier (visible any time in the console); `X-API-Secret` is the actual credential, shown only once at creation or rotation.
 
 **Authentication for the Ops Console** (Admins/Operators): session JWT issued by `Auth.login`.
 
@@ -117,8 +119,8 @@ X-API-Key: <live-or-test-key>
 |--------|-----------|
 | `auth` | `login`, `logout`, `me`, `reset_with_key` |
 | `setup` | `initial_setup`, `setup_status` |
-| `app` | `create_app`, `list_apps`, `get_app`, `rotate_api_key`, `revoke_api_key`, `deactivate_app` |
-| `accounts` | `create_account`, `list_accounts`, `get_account`, `deactivate_account`, `activate_account` |
+| `app` | `create_app`, `list_apps`, `get_app`, `update_app`, `rotate_api_key`, `revoke_api_key`, `deactivate_app` |
+| `accounts` | `create_account`, `list_accounts`, `get_account`, `deactivate_account`, `activate_account` — writes require the console Admin role, or an App with `can_manage_accounts=true` |
 | `ledger` | `post_entry`, `list_entries`, `get_entry`, `reverse_entry`, `request_reversal`, `approve_reversal`, `reject_reversal`, `list_reversal_requests` |
 | `reports` | `trial_balance`, `balance_sheet`, `income_statement`, `export_entries` |
 | `audit` | `verify_audit` |

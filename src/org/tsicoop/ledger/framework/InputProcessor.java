@@ -26,19 +26,23 @@ import java.util.concurrent.ConcurrentHashMap;
  *    Accounts writes, org-wide ledger/reports/reversal-approval): a JWT
  *    session cookie issued by Auth.login, carrying the operator's user_id/
  *    email/role (see resolveConsoleSession).
- *  - Tenant (App-facing ledger API): X-API-Key hashed with SHA-256 and looked
- *    up directly against apps.api_key_live_hash / api_key_test_hash. This has
- *    to be a deterministic hash (not bcrypt/PasswordHasher) because the FSD
- *    requires a direct index lookup, not a per-row secret comparison.
+ *  - Tenant (App-facing ledger API): an API_KEY + API_SECRET pair, like most
+ *    other TSI apps. X-API-Key is a non-secret identifier - looked up
+ *    directly (plaintext, indexed) against apps.api_key - and X-API-Secret is
+ *    hashed with SHA-256 and compared against apps.api_secret_hash. This has
+ *    to be a deterministic hash (not bcrypt/PasswordHasher) because the
+ *    lookup is by key first, then a single hash comparison, not a per-row
+ *    secret scan.
  */
 public class InputProcessor {
     public final static String REQUEST_DATA = "input_json";
     public final static String APP_ID_ATTR = "app_id";
-    public final static String KEY_ENV_ATTR = "key_env";
+    public final static String CAN_MANAGE_ACCOUNTS_ATTR = "can_manage_accounts";
     public final static String USER_ID_ATTR = "user_id";
     public final static String USER_ROLE_ATTR = "user_role";
 
     private static final String API_KEY_HEADER = "X-API-Key";
+    private static final String API_SECRET_HEADER = "X-API-Secret";
 
     /** Ops Console session cookie set by Auth.login — see InputProcessor.resolveConsoleSession. */
     public static final String SESSION_COOKIE = "tsi_ledger_session";
@@ -47,13 +51,15 @@ public class InputProcessor {
 
     private static class CachedApp {
         final UUID appId;
-        final String keyEnv;
+        final String secretHash;
         final boolean active;
+        final boolean canManageAccounts;
         final long expiresAt;
-        CachedApp(UUID appId, String keyEnv, boolean active) {
+        CachedApp(UUID appId, String secretHash, boolean active, boolean canManageAccounts) {
             this.appId = appId;
-            this.keyEnv = keyEnv;
+            this.secretHash = secretHash;
             this.active = active;
+            this.canManageAccounts = canManageAccounts;
             this.expiresAt = System.currentTimeMillis() + TENANT_CACHE_TTL_MS;
         }
         boolean isExpired() { return System.currentTimeMillis() > expiresAt; }
@@ -61,9 +67,9 @@ public class InputProcessor {
 
     private static final ConcurrentHashMap<String, CachedApp> tenantCache = new ConcurrentHashMap<>();
 
-    /** Immediately evicts a rotated/revoked API key hash from the in-process cache. */
-    public static void evictTenantCache(String apiKeyHash) {
-        tenantCache.remove(apiKeyHash);
+    /** Immediately evicts a rotated/revoked/deactivated App's cache entry, keyed by its (now stale) api_key. */
+    public static void evictTenantCache(String apiKey) {
+        if (apiKey != null) tenantCache.remove(apiKey);
     }
 
     public static String sha256Hex(String raw) {
@@ -160,23 +166,25 @@ public class InputProcessor {
     }
 
     /**
-     * Resolves the X-API-Key header to an active app, hashing it and matching
-     * against either the live or test key hash. On success sets APP_ID_ATTR /
-     * KEY_ENV_ATTR request attributes and returns true.
+     * Resolves the X-API-Key / X-API-Secret header pair to an active app:
+     * X-API-Key is looked up directly (it's a non-secret identifier, not
+     * hashed), then the SHA-256 hash of X-API-Secret is compared against the
+     * stored hash. On success sets APP_ID_ATTR/CAN_MANAGE_ACCOUNTS_ATTR and
+     * returns true.
      */
     public static boolean resolveTenantApp(HttpServletRequest req) {
         String apiKey = req.getHeader(API_KEY_HEADER);
-        if (apiKey == null || apiKey.trim().isEmpty()) return false;
+        String apiSecret = req.getHeader(API_SECRET_HEADER);
+        if (apiKey == null || apiKey.trim().isEmpty() || apiSecret == null || apiSecret.trim().isEmpty()) return false;
 
-        String hash = sha256Hex(apiKey);
-        CachedApp cached = tenantCache.get(hash);
+        CachedApp cached = tenantCache.get(apiKey);
         if (cached != null && !cached.isExpired()) {
-            if (!cached.active) return false;
+            if (!cached.active || !cached.secretHash.equals(sha256Hex(apiSecret))) return false;
             req.setAttribute(APP_ID_ATTR, cached.appId);
-            req.setAttribute(KEY_ENV_ATTR, cached.keyEnv);
+            req.setAttribute(CAN_MANAGE_ACCOUNTS_ATTR, cached.canManageAccounts);
             return true;
         }
-        tenantCache.remove(hash);
+        tenantCache.remove(apiKey);
 
         PoolDB pool = null;
         Connection conn = null;
@@ -186,22 +194,18 @@ public class InputProcessor {
             pool = new PoolDB();
             conn = pool.getConnection();
             pstmt = conn.prepareStatement(
-                    "SELECT id, is_active, " +
-                    "CASE WHEN api_key_live_hash = ? THEN 'LIVE' WHEN api_key_test_hash = ? THEN 'TEST' END AS key_env " +
-                    "FROM apps WHERE api_key_live_hash = ? OR api_key_test_hash = ?");
-            pstmt.setString(1, hash);
-            pstmt.setString(2, hash);
-            pstmt.setString(3, hash);
-            pstmt.setString(4, hash);
+                    "SELECT id, is_active, can_manage_accounts, api_secret_hash FROM apps WHERE api_key = ?");
+            pstmt.setString(1, apiKey);
             rs = pstmt.executeQuery();
             if (rs.next()) {
                 UUID appId = UUID.fromString(rs.getString("id"));
                 boolean active = rs.getBoolean("is_active");
-                String keyEnv = rs.getString("key_env");
-                tenantCache.put(hash, new CachedApp(appId, keyEnv, active));
-                if (!active) return false;
+                boolean canManageAccounts = rs.getBoolean("can_manage_accounts");
+                String secretHash = rs.getString("api_secret_hash");
+                tenantCache.put(apiKey, new CachedApp(appId, secretHash, active, canManageAccounts));
+                if (!active || secretHash == null || !secretHash.equals(sha256Hex(apiSecret))) return false;
                 req.setAttribute(APP_ID_ATTR, appId);
-                req.setAttribute(KEY_ENV_ATTR, keyEnv);
+                req.setAttribute(CAN_MANAGE_ACCOUNTS_ATTR, canManageAccounts);
                 return true;
             }
         } catch (SQLException e) {
@@ -214,6 +218,12 @@ public class InputProcessor {
 
     public static UUID getAppId(HttpServletRequest req) {
         return (UUID) req.getAttribute(APP_ID_ATTR);
+    }
+
+    /** True for a console Admin, or a tenant App authenticated with can_manage_accounts=true. */
+    public static boolean canManageAccounts(HttpServletRequest req) {
+        if (isAdmin(req)) return true;
+        return Boolean.TRUE.equals(req.getAttribute(CAN_MANAGE_ACCOUNTS_ATTR));
     }
 
     /**

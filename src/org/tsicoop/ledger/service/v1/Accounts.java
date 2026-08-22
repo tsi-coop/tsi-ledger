@@ -18,12 +18,13 @@ import java.util.UUID;
 /**
  * Chart of Accounts — ONE table, shared by the whole organization (TENANT_OR_
  * CONSOLE auth mode). create_account/deactivate_account/activate_account
- * require the console Admin role: the COA is structural, organization-wide
- * data, not something an individual App or Operator edits. list_accounts/
- * get_account stay readable either way — Apps may still validate account
- * codes programmatically via their API key, and console Operators can browse
- * read-only — matching "no COA access via keys **on the UI**" without also
- * cutting off legitimate server-to-server reads.
+ * require either the console Admin role, or a tenant App whose
+ * can_manage_accounts flag is set (InputProcessor.canManageAccounts) — the COA
+ * is structural, organization-wide data, so writing to it is still a
+ * deliberately granted privilege, not something every App or Operator gets by
+ * default. list_accounts/get_account stay readable either way — any App may
+ * still validate account codes programmatically via its own key pair, and
+ * console Operators can browse read-only.
  *
  * activate_account exists because deactivation here is reversible, unlike
  * App.deactivate_app (which also revokes API keys — those can't be
@@ -43,8 +44,9 @@ public class Accounts implements Action {
 
             boolean write = "create_account".equalsIgnoreCase(func) || "deactivate_account".equalsIgnoreCase(func)
                     || "activate_account".equalsIgnoreCase(func);
-            if (write && !InputProcessor.isAdmin(req)) {
-                OutputProcessor.errorResponse(res, 403, "Forbidden", "Admin role required.", req.getRequestURI());
+            if (write && !InputProcessor.canManageAccounts(req)) {
+                OutputProcessor.errorResponse(res, 403, "Forbidden",
+                        "Admin role required, or an App with can_manage_accounts=true.", req.getRequestURI());
                 return;
             }
 

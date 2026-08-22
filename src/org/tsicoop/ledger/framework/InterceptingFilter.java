@@ -64,7 +64,7 @@ public class InterceptingFilter implements Filter {
             res.setHeader("Vary", "Origin");
         }
         res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-        res.setHeader("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-API-Key, Idempotency-Key");
+        res.setHeader("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-API-Key, X-API-Secret, Idempotency-Key");
         res.setHeader("Access-Control-Max-Age", "3600");
 
         res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");

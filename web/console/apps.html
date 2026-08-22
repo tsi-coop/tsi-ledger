@@ -9,7 +9,7 @@
 <body>
 <script src="assets/console.js"></script>
 <script>
-  const content = renderShell('apps', 'Apps', 'Posting sources (HRMS, Commerce, Lending, ...) - provision Apps and manage their live/test API keys. Admin only.');
+  const content = renderShell('apps', 'Apps', 'Posting sources (HRMS, Commerce, Lending, ...) - provision Apps and manage their API_KEY/API_SECRET. Admin only.');
 
   content.innerHTML = `
     <div class="card">
@@ -20,8 +20,8 @@
       <div id="apps-error"></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>App Name</th><th>ID</th><th>Status</th><th>Live Key</th><th>Test Key</th><th>Created</th><th></th></tr></thead>
-          <tbody id="apps-body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
+          <thead><tr><th>App Name</th><th>Status</th><th>Manages COA</th><th>API_KEY</th><th>Created</th><th></th></tr></thead>
+          <tbody id="apps-body"><tr class="empty-row"><td colspan="6">Loading…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -36,6 +36,15 @@
             <label for="new-app-name">App Name</label>
             <input id="new-app-name" required maxlength="255" placeholder="e.g. HRMS, Commerce, Lending">
           </div>
+          <div class="field">
+            <label style="display:flex;align-items:center;gap:8px;font-weight:500;color:var(--ink)">
+              <input type="checkbox" id="new-app-can-manage-accounts" style="width:auto">
+              Can manage Chart of Accounts
+            </label>
+            <p class="hint">Lets this App call create_account/deactivate_account/activate_account with its own
+              API_KEY/API_SECRET, without a console Admin session. Grant this sparingly - e.g. to a Financials
+              system, not to every App.</p>
+          </div>
           <div class="modal-actions">
             <button type="button" onclick="closeModal('create-modal')">Cancel</button>
             <button type="submit" class="primary">Create</button>
@@ -44,12 +53,13 @@
       </div>
     </div>
 
-    <!-- One-time key reveal modal -->
+    <!-- One-time key/secret reveal modal -->
     <div class="modal-overlay" id="keys-modal">
       <div class="modal">
-        <h2 id="keys-modal-title">API Key</h2>
-        <div class="alert warn">Shown once - store it now. It cannot be retrieved again; only a hash is kept.
-          Give this key to the App itself (server-to-server) - it's never needed in this console.</div>
+        <h2 id="keys-modal-title">API Credentials</h2>
+        <div class="alert warn">API_SECRET is shown once - store it now. It cannot be retrieved again; only a hash
+          is kept. API_KEY stays visible any time on this page. Give both to the App itself (server-to-server) -
+          neither is ever needed in this console.</div>
         <div id="keys-modal-body"></div>
         <div class="modal-actions">
           <button onclick="closeModal('keys-modal')">Done</button>
@@ -69,9 +79,6 @@
     </div>
   `);
 
-  function openModal(id) { qs(id).classList.add('open'); }
-  function closeModal(id) { qs(id).classList.remove('open'); }
-
   let appsCache = [];
 
   async function loadApps() {
@@ -79,14 +86,13 @@
     try {
       appsCache = await consoleApi('/api/v1/app', 'list_apps');
       qs('apps-body').innerHTML = appsCache.length === 0
-        ? '<tr class="empty-row"><td colspan="7">No Apps yet.</td></tr>'
+        ? '<tr class="empty-row"><td colspan="6">No Apps yet.</td></tr>'
         : appsCache.map(a => `
           <tr>
             <td>${esc(a.app_name)}</td>
-            <td><code title="${esc(a.id)}">${shortId(a.id)}</code></td>
             <td>${a.is_active ? '<span class="badge green">Active</span>' : '<span class="badge red">Inactive</span>'}</td>
-            <td>${a.has_live_key ? '<span class="badge blue">Set</span>' : '<span class="badge gray">None</span>'}</td>
-            <td>${a.has_test_key ? '<span class="badge blue">Set</span>' : '<span class="badge gray">None</span>'}</td>
+            <td>${a.can_manage_accounts ? '<span class="badge blue">Yes</span>' : '<span class="badge gray">No</span>'}</td>
+            <td>${a.api_key ? `<code title="${esc(a.api_key)}">${shortId(a.api_key)}</code>` : '<span class="badge gray">Revoked</span>'}</td>
             <td>${fmtDate(a.created_at)}</td>
             <td><button class="small" onclick="openManage('${esc(a.id)}')">Manage</button></td>
           </tr>`).join('');
@@ -95,18 +101,25 @@
     }
   }
 
-  qs('new-app-btn').addEventListener('click', () => { qs('new-app-name').value = ''; openModal('create-modal'); });
+  qs('new-app-btn').addEventListener('click', () => {
+    qs('new-app-name').value = '';
+    qs('new-app-can-manage-accounts').checked = false;
+    openModal('create-modal');
+  });
 
   qs('create-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = qs('new-app-name').value.trim();
     if (!name) return;
     try {
-      const app = await consoleApi('/api/v1/app', 'create_app', { app_name: name });
+      const app = await consoleApi('/api/v1/app', 'create_app', {
+        app_name: name,
+        can_manage_accounts: qs('new-app-can-manage-accounts').checked
+      });
       closeModal('create-modal');
       showKeys('New App: ' + app.app_name, [
-        { label: 'Live API Key', value: app.live_api_key },
-        { label: 'Test API Key', value: app.test_api_key }
+        { label: 'API_KEY', value: app.api_key },
+        { label: 'API_SECRET', value: app.api_secret }
       ]);
       loadApps();
     } catch (err) {
@@ -134,48 +147,63 @@
       <p class="muted mono">${esc(app.id)}</p>
       <p>${app.is_active ? '<span class="badge green">Active</span>' : '<span class="badge red">Inactive</span>'}</p>
       <div class="section-gap">
-        <h2 style="font-size:0.95rem">Live Key</h2>
-        <div class="field-row">
-          <button ${!app.is_active ? 'disabled' : ''} onclick="rotateKey('${appId}','LIVE')">Rotate</button>
-          <button class="danger" ${!app.has_live_key ? 'disabled' : ''} onclick="revokeKey('${appId}','LIVE')">Revoke</button>
-        </div>
+        <h2 style="font-size:0.95rem">Permissions</h2>
+        <label style="display:flex;align-items:center;gap:8px;font-weight:500;color:var(--ink)">
+          <input type="checkbox" id="manage-can-manage-accounts" style="width:auto"
+            ${app.can_manage_accounts ? 'checked' : ''} ${!app.is_active ? 'disabled' : ''}
+            onchange="toggleCanManageAccounts('${appId}', this.checked)">
+          Can manage Chart of Accounts
+        </label>
       </div>
       <div class="section-gap">
-        <h2 style="font-size:0.95rem">Test Key</h2>
+        <h2 style="font-size:0.95rem">API_KEY: <code>${app.api_key ? esc(shortId(app.api_key)) : '-'}</code></h2>
         <div class="field-row">
-          <button ${!app.is_active ? 'disabled' : ''} onclick="rotateKey('${appId}','TEST')">Rotate</button>
-          <button class="danger" ${!app.has_test_key ? 'disabled' : ''} onclick="revokeKey('${appId}','TEST')">Revoke</button>
+          <button ${!app.is_active ? 'disabled' : ''} onclick="rotateKey('${appId}')">Rotate</button>
+          <button class="danger" ${!app.has_key ? 'disabled' : ''} onclick="revokeKey('${appId}')">Revoke</button>
         </div>
       </div>
       <div class="section-gap">
         <h2 style="font-size:0.95rem">Danger Zone</h2>
         <button class="danger" ${!app.is_active ? 'disabled' : ''} onclick="deactivateApp('${appId}')">Deactivate App</button>
-        <p class="hint">Deactivating revokes both keys immediately and blocks all further API calls for this App. There is no reactivate - this mirrors the API.</p>
+        <p class="hint">Deactivating blocks all further API calls for this App immediately. There is no reactivate - this mirrors the API.</p>
       </div>
     `;
     openModal('manage-modal');
   }
 
-  async function rotateKey(appId, keyEnv) {
+  async function toggleCanManageAccounts(appId, checked) {
     try {
-      const result = await consoleApi('/api/v1/app', 'rotate_api_key', { app_id: appId, key_env: keyEnv });
+      await consoleApi('/api/v1/app', 'update_app', { app_id: appId, can_manage_accounts: checked });
+      loadApps();
+    } catch (e) {
+      alert('Update failed: ' + e.message);
+      qs('manage-can-manage-accounts').checked = !checked;
+    }
+  }
+
+  async function rotateKey(appId) {
+    try {
+      const result = await consoleApi('/api/v1/app', 'rotate_api_key', { app_id: appId });
       closeModal('manage-modal');
-      showKeys('Rotated ' + keyEnv + ' Key', [{ label: keyEnv + ' API Key', value: result.api_key }]);
+      showKeys('Rotated Credentials', [
+        { label: 'API_KEY', value: result.api_key },
+        { label: 'API_SECRET', value: result.api_secret }
+      ]);
       loadApps();
     } catch (e) { alert('Rotate failed: ' + e.message); }
   }
 
-  async function revokeKey(appId, keyEnv) {
-    if (!confirm('Revoke the ' + keyEnv + ' key? Any client using it will start getting 401s immediately.')) return;
+  async function revokeKey(appId) {
+    if (!confirm('Revoke this App key? It will start getting 401s immediately - rotate to issue a new one.')) return;
     try {
-      await consoleApi('/api/v1/app', 'revoke_api_key', { app_id: appId, key_env: keyEnv });
+      await consoleApi('/api/v1/app', 'revoke_api_key', { app_id: appId });
       closeModal('manage-modal');
       loadApps();
     } catch (e) { alert('Revoke failed: ' + e.message); }
   }
 
   async function deactivateApp(appId) {
-    if (!confirm('Deactivate this App? Both keys stop working immediately and cannot be un-revoked.')) return;
+    if (!confirm('Deactivate this App? It stops working immediately and cannot be reactivated.')) return;
     try {
       await consoleApi('/api/v1/app', 'deactivate_app', { app_id: appId });
       closeModal('manage-modal');

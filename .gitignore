@@ -8,5 +8,4 @@
 /.claude/
 /server/.env
 *.swp
-/examples/.state/
 

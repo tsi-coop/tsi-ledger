@@ -45,7 +45,7 @@
       <h2>Recent Apps</h2>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>App Name</th><th>Status</th><th>Keys</th><th>Created</th></tr></thead>
+          <thead><tr><th>App Name</th><th>Status</th><th>Key</th><th>Created</th></tr></thead>
           <tbody id="recent-apps-body"><tr class="empty-row"><td colspan="4">Loading…</td></tr></tbody>
         </table>
       </div>
@@ -67,7 +67,7 @@
           <tr>
             <td>${esc(a.app_name)}</td>
             <td>${a.is_active ? '<span class="badge green">Active</span>' : '<span class="badge red">Inactive</span>'}</td>
-            <td>${a.has_live_key ? '<span class="badge blue">Live</span> ' : ''}${a.has_test_key ? '<span class="badge gray">Test</span>' : ''}</td>
+            <td>${a.has_key ? '<span class="badge blue">Set</span>' : '<span class="badge gray">Revoked</span>'}</td>
             <td>${fmtDate(a.created_at)}</td>
           </tr>`).join('');
     } catch (e) {

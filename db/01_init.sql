@@ -36,16 +36,23 @@ CREATE TABLE operators (
 );
 
 -- 2. Apps: posting sources. Each App is a system (HRMS, Commerce, Lending, ...)
--- that submits journal entries via its own API key. api_key_*_hash store a
--- SHA-256 hex digest of the raw key — a deterministic hash, not bcrypt,
--- because the auth path does a direct index lookup by hash rather than a
--- per-row secret comparison (see InputProcessor.resolveTenantApp). Apps no
--- longer own a chart of accounts — see `accounts` below.
+-- that submits journal entries via one API_KEY/API_SECRET pair - api_key is a
+-- non-secret identifier (stored and returned in plaintext, like a client ID:
+-- safe to display any time in the console), and api_secret_hash stores a
+-- SHA-256 hex digest of the actual secret. The auth path
+-- (InputProcessor.resolveTenantApp) looks the app up by the plaintext key
+-- (direct index lookup) and then verifies the secret against its hash - a
+-- deterministic hash, not bcrypt, since it's a lookup-then-verify path, not a
+-- per-row secret comparison. Apps no longer own a chart of accounts — see
+-- `accounts` below. can_manage_accounts lets a specific App (e.g. a Financials
+-- system) create/deactivate/activate accounts via its own key pair instead of
+-- requiring a console Admin session for every Chart of Accounts change.
 CREATE TABLE apps (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     app_name VARCHAR(255) NOT NULL,
-    api_key_live_hash CHAR(64) UNIQUE,
-    api_key_test_hash CHAR(64) UNIQUE,
+    can_manage_accounts BOOLEAN NOT NULL DEFAULT FALSE,
+    api_key VARCHAR(80) UNIQUE,
+    api_secret_hash CHAR(64),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );

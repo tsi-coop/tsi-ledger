@@ -63,8 +63,8 @@
       <div>
         <h3>Apps &amp; API Keys <span class="badge blue">Admin</span></h3>
         <p>Each posting source (HRMS, Commerce, Lending, ...) is provisioned here as an "App" with its own
-          live/test API key. Keys are shown exactly once, at creation or rotation - the console never stores or
-          re-displays them.</p>
+          API_KEY/API_SECRET pair. API_SECRET is shown exactly once, at creation or rotation - the console never
+          stores or re-displays it. API_KEY is a non-secret identifier and stays visible any time.</p>
       </div>
     </div>
     <div class="tour-step">
@@ -72,16 +72,17 @@
       <div>
         <h3>Chart of Accounts</h3>
         <p>One shared list of accounts for the whole organization - not per-App. Admins create/deactivate
-          accounts; everyone can browse them. Every App posts against this same chart.</p>
+          accounts, and so can any App an Admin has granted that permission to (a Financials system, say) -
+          everyone can browse them. Every App posts against this same chart.</p>
       </div>
     </div>
     <div class="tour-step">
       <div class="num">6</div>
       <div>
         <h3>Posting Entries (API)</h3>
-        <p>Apps post balanced double-entry journal entries directly to the API with their own <code>X-API-Key</code> -
-          this never goes through the browser console. Each App's postings form their own tamper-evident,
-          hash-chained sequence.</p>
+        <p>Apps post balanced double-entry journal entries directly to the API with their own
+          <code>X-API-Key</code> / <code>X-API-Secret</code> pair - this never goes through the browser console.
+          Each App's postings form their own tamper-evident, hash-chained sequence.</p>
       </div>
     </div>
     <div class="tour-step">
