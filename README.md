@@ -120,7 +120,7 @@ X-API-Secret: <secret>
 | `auth` | `login`, `logout`, `me`, `reset_with_key` |
 | `setup` | `initial_setup`, `setup_status` |
 | `app` | `create_app`, `list_apps`, `get_app`, `update_app`, `rotate_api_key`, `revoke_api_key`, `deactivate_app` |
-| `accounts` | `create_account`, `list_accounts`, `get_account`, `deactivate_account`, `activate_account` — writes require the console Admin role, or an App with `can_manage_accounts=true` |
+| `accounts` | `create_account`, `list_accounts`, `get_account`, `deactivate_account`, `activate_account` - writes require the console Admin role, or an App with `can_manage_accounts=true` |
 | `ledger` | `post_entry`, `list_entries`, `get_entry`, `reverse_entry`, `request_reversal`, `approve_reversal`, `reject_reversal`, `list_reversal_requests` |
 | `reports` | `trial_balance`, `balance_sheet`, `income_statement`, `export_entries` |
 | `audit` | `verify_audit` |
@@ -136,7 +136,7 @@ Every function's input is validated against a JSON Schema in `web/WEB-INF/valida
 mvn test
 ```
 
-`HashChainTest` (`test/org/tsicoop/ledger/service/v1/`) is a pure unit test of the canonical-payload/hash-chain math — no database needed, always runs.
+`HashChainTest` (`test/org/tsicoop/ledger/service/v1/`) is a pure unit test of the canonical-payload/hash-chain math - no database needed, always runs.
 
 `LedgerIntegrationTest` exercises `post_entry`/`reverse_entry` against a real Postgres (balance check, idempotency replay, and concurrent-post locking - the FOR UPDATE row lock that keeps two simultaneous posts to the same App from racing past each other). It skips itself with a clear message if no database is configured, so plain `mvn test` stays green. Point it at the docker-compose dev database:
 

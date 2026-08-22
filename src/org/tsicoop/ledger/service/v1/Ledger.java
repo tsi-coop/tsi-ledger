@@ -227,7 +227,7 @@ public class Ledger implements Action {
         if (filterAppId != null) sql.append(" AND je.app_id = ?");
         if (dateFrom != null) sql.append(" AND je.posted_at >= ?");
         if (dateTo != null) sql.append(" AND je.posted_at <= ?");
-        sql.append(" ORDER BY je.app_id, je.sequence_number DESC LIMIT ? OFFSET ?");
+        sql.append(" ORDER BY je.posted_at DESC, je.sequence_number DESC LIMIT ? OFFSET ?");
 
         PoolDB pool = null; Connection conn = null;
         try {
