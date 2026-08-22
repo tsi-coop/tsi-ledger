@@ -48,7 +48,7 @@ the Admin.
 
 | # | Script | Needs (env vars) | Posts |
 |---|--------|-------------------|-------|
-| 1 | `1_financials_create_coa.sh` | `API_KEY`/`API_SECRET` of the Financials App (`can_manage_accounts=true`) | 14-account Chart of Accounts (including Owner's Capital and Retained Earnings) + a $150,000 founding capital entry |
+| 1 | `1_financials_create_coa.sh` | `API_KEY`/`API_SECRET` of the Financials App (`can_manage_accounts=true`) | 14-account Chart of Accounts (including Owner's Capital and Retained Earnings) + a Rs 150,000 founding capital entry |
 | 2 | `2_hrms_post_payroll.sh` | `API_KEY`/`API_SECRET` of the HRMS App | 9 entries - 8 monthly payroll runs + one bonus payout, Jan–Aug 2026 |
 | 3 | `3_business_post_entries.sh` | `API_KEY`/`API_SECRET` of the Business Platform App | 20 entries - 12 invoices across 11 customers + 8 payments (4 invoices left open on AR) |
 | 4 | `4_vendor_post_entries.sh` | `API_KEY`/`API_SECRET` of the Vendor Management App | 20 entries - 12 bills across 5 spend categories + 8 payments (4 bills left open on AP) |
