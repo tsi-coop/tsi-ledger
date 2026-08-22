@@ -65,6 +65,12 @@ CREATE TABLE accounts (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
 
+-- Two accounts with the same name (case-insensitive) under different codes
+-- silently split what should be one balance across two ledger lines - a
+-- functional unique index is the DB-level backstop for that, alongside
+-- Accounts.java's own pre-check (which gives the friendlier 409 message).
+CREATE UNIQUE INDEX accounts_account_name_lower_unique ON accounts (LOWER(account_name));
+
 -- 4. Journal Entries — the hash-chained block record (FSD Section 5 / TDD
 -- Section 5): entry_payload_hash = P_n, previous_block_hash = H_(n-1),
 -- block_hash = H_n. sequence_number/the hash chain remain PER app_id (each

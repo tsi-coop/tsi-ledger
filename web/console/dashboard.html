@@ -11,25 +11,34 @@
 <script>
   const content = renderShell('dashboard', 'Dashboard', 'One organization-wide ledger - every App posts here against the shared Chart of Accounts.');
 
+  qs('shell-page-header').insertAdjacentHTML('beforeend',
+    '<button class="ghost help-icon-btn" id="dashboard-help-btn" title="About this console" aria-label="About this console">?</button>');
+
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-overlay" id="welcome-modal">
+      <div class="modal">
+        <h2>Welcome, <span id="welcome-name">-</span></h2>
+        <p>This console manages one shared, organization-wide ledger. Apps (HRMS, Commerce, Lending, ...) post
+          journal entries via their own API key, always against the same <a href="accounts.html">Chart of Accounts</a>.</p>
+        <ul>
+          <li><strong>Operators</strong> browse the COA/ledger, post manual entries, and request reversals.</li>
+          <li><strong>Admins</strong> additionally provision <a href="apps.html">Apps &amp; API keys</a>, manage the
+            <a href="accounts.html">Chart of Accounts</a> structure, manage <a href="users.html">Users</a>, and approve
+            or reject reversal requests on the <a href="entries.html">Journal Entries</a> page (maker-checker - a
+            different Admin than the requester must decide).</li>
+        </ul>
+        <div class="modal-actions"><button class="primary" onclick="closeModal('welcome-modal')">Got it</button></div>
+      </div>
+    </div>
+  `);
+  qs('dashboard-help-btn').addEventListener('click', () => openModal('welcome-modal'));
+
   content.innerHTML = `
     <div class="stat-grid" id="stat-grid">
       <div class="stat-card"><div class="label">Apps</div><div class="value" id="stat-apps">-</div></div>
       <div class="stat-card ok"><div class="label">Accounts (COA)</div><div class="value" id="stat-accounts">-</div></div>
       <div class="stat-card"><div class="label">Operators</div><div class="value" id="stat-operators">-</div></div>
       <div class="stat-card" id="stat-pending-card"><div class="label">Pending Reversals</div><div class="value" id="stat-pending">-</div></div>
-    </div>
-
-    <div class="card">
-      <h2>Welcome, <span id="welcome-name">-</span></h2>
-      <p>This console manages one shared, organization-wide ledger. Apps (HRMS, Commerce, Lending, ...) post
-        journal entries via their own API key, always against the same <a href="accounts.html">Chart of Accounts</a>.</p>
-      <ul>
-        <li><strong>Operators</strong> browse the COA/ledger, post manual entries, and request reversals.</li>
-        <li><strong>Admins</strong> additionally provision <a href="apps.html">Apps &amp; API keys</a>, manage the
-          <a href="accounts.html">Chart of Accounts</a> structure, manage <a href="users.html">Users</a>, and approve
-          or reject reversal requests on the <a href="entries.html">Journal Entries</a> page (maker-checker - a
-          different Admin than the requester must decide).</li>
-      </ul>
     </div>
 
     <div class="card">

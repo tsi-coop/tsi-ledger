@@ -222,7 +222,7 @@ public class Ledger implements Action {
 
         StringBuilder sql = new StringBuilder(
                 "SELECT je.id, je.app_id, a.app_name, je.sequence_number, je.reference_id, je.description, je.posted_at, " +
-                "je.entry_type, je.reverses_entry_id, je.block_hash, je.created_at " +
+                "je.entry_type, je.reverses_entry_id, je.entry_payload_hash, je.previous_block_hash, je.block_hash, je.created_at " +
                 "FROM journal_entries je JOIN apps a ON a.id = je.app_id WHERE 1=1");
         if (filterAppId != null) sql.append(" AND je.app_id = ?");
         if (dateFrom != null) sql.append(" AND je.posted_at >= ?");
@@ -254,6 +254,8 @@ public class Ledger implements Action {
                         row.put("posted_at", rs.getTimestamp("posted_at").toInstant().toString());
                         row.put("entry_type", rs.getString("entry_type"));
                         row.put("reverses_entry_id", rs.getString("reverses_entry_id"));
+                        row.put("entry_payload_hash", rs.getString("entry_payload_hash"));
+                        row.put("previous_block_hash", rs.getString("previous_block_hash"));
                         row.put("block_hash", rs.getString("block_hash"));
                         row.put("created_at", rs.getTimestamp("created_at").toInstant().toString());
                         entries.add(row);

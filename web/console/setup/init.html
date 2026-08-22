@@ -8,7 +8,7 @@
   <style>
     body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
     .setup-card { width: 100%; max-width: 420px; }
-    .setup-card h1 { text-align: center; margin-bottom: 4px; }
+    .setup-brand { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--primary); font-size: 1.35rem; margin-bottom: 4px; }
     .setup-card .tagline { text-align: center; color: var(--ink); font-size: 0.85rem; font-weight: 600; margin: 0 0 6px; }
     .setup-card .sub { text-align: center; color: var(--muted); margin-bottom: 24px; }
     .setup-card button { width: 100%; justify-content: center; margin-top: 6px; }
@@ -17,7 +17,15 @@
 <body>
 
 <div class="card setup-card">
-  <h1>TSI Ledger</h1>
+  <div class="setup-brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg width="26" height="26" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="1" y="1" width="20" height="20" rx="6" fill="currentColor"/>
+        <path d="M6 8h10M6 11h10M6 14h6" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span class="brand-word"><strong>TSI</strong> Ledger</span>
+  </div>
   <p class="tagline">An open-source API first double entry accounting engine</p>
   <p class="sub">Create the first Admin account</p>
 

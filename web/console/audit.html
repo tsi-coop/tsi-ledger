@@ -9,45 +9,142 @@
 <body>
 <script src="assets/console.js"></script>
 <script>
-  const content = renderShell('audit', 'Audit Verification', 'Recompute the SHA-256 hash chain for one App and confirm nothing was altered out-of-band.');
+  const content = renderShell('audit', 'Audit Verification', 'Browse the hash chain for one App, then recompute it from scratch to confirm nothing was altered out-of-band.');
   content.innerHTML = `<div id="audit-app"></div>`;
+
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-overlay" id="audit-help-modal">
+      <div class="modal">
+        <h2>About the Hash Chain Log</h2>
+        <p>Every entry carries the SHA-256 hash of its own payload, the previous entry's block hash, and the
+          resulting block hash - each is cryptographically bound to the one before it.</p>
+        <p><strong>Run Verification</strong> recomputes every hash for this App from scratch, server-side, and
+          confirms it still matches - that recomputation is the actual proof; the table is only what's on record.</p>
+        <p>For an App with a long history, <strong>Download Full Chain</strong> pulls every entry (not just what's
+          loaded on screen) into a CSV with all three hash columns, so an auditor can archive it or re-verify it
+          independently, offline.</p>
+        <div class="modal-actions"><button class="primary" onclick="closeModal('audit-help-modal')">Got it</button></div>
+      </div>
+    </div>
+  `);
+
+  const PAGE_SIZE = 100;
+  const FETCH_PAGE_SIZE = 200; // API max per call
+  const MAX_DOWNLOAD_PAGES = 500; // safety cap: 100,000 entries
+
+  let appsCache = [];
+  let rawEntries = [];   // accumulates as "Load More" is clicked, in API (newest-first) order
+  let entriesCache = []; // rawEntries, sorted ascending by sequence_number, for display
+  let offset = 0;
+  let lastPageCount = 0;
 
   async function init() {
     const app = qs('audit-app');
-    let appsCache = [];
     try { appsCache = await consoleApi('/api/v1/app', 'list_apps'); } catch (e) { appsCache = []; }
 
     app.innerHTML = `
       <div class="card">
         <h2>
-          Hash Chain Verification
+          <span>Hash Chain Log
+            <button type="button" class="ghost help-icon-btn-inline" id="audit-help-btn" title="What is this?" aria-label="What is this?">?</button>
+          </span>
           <span style="display:flex;gap:8px;align-items:center">
             <select id="audit-app-select">${appsCache.map(a => `<option value="${esc(a.id)}">${esc(a.app_name)}</option>`).join('')}</select>
+            <button class="small" id="download-btn">Download Full Chain (CSV)</button>
             <button class="primary" id="run-btn">Run Verification</button>
           </span>
         </h2>
-        <p class="page-sub">The hash chain is per-App - walks every journal entry for the selected App in
-          sequence order, recomputes each block's hash from the currently stored data, and compares it to what
-          was recorded at post time. Stops at the first mismatch - a tamper-evident chain only vouches for the
-          entries before the break.</p>
-        <div id="audit-result"><p class="muted">Choose an App and run verification to see results.</p></div>
+        <div id="audit-summary"></div>
+        <div id="audit-error"></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Seq</th><th>Reference</th><th>Type</th><th>Previous Block Hash</th><th>Payload Hash</th><th>Block Hash</th><th>Status</th></tr></thead>
+            <tbody id="audit-body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div style="text-align:center;margin-top:12px">
+          <button class="small" id="load-more-btn" style="display:none">Load More</button>
+        </div>
       </div>
     `;
+    qs('audit-help-btn').addEventListener('click', () => openModal('audit-help-modal'));
     qs('run-btn').addEventListener('click', runVerify);
+    qs('download-btn').addEventListener('click', downloadFullChain);
+    qs('audit-app-select').addEventListener('change', () => loadLog());
+    qs('load-more-btn').addEventListener('click', () => loadLog(true));
+    await loadLog();
+  }
+
+  async function loadLog(append) {
+    const appId = qs('audit-app-select').value;
+    qs('audit-error').innerHTML = '';
+    if (!append) {
+      qs('audit-summary').innerHTML = '';
+      offset = 0; rawEntries = []; entriesCache = [];
+      qs('audit-body').innerHTML = '<tr class="empty-row"><td colspan="7">Loading…</td></tr>';
+    }
+    if (!appId) { qs('audit-body').innerHTML = '<tr class="empty-row"><td colspan="7">No App selected.</td></tr>'; return; }
+
+    try {
+      const result = await consoleApi('/api/v1/ledger', 'list_entries', { app_id: appId, limit: PAGE_SIZE, offset });
+      lastPageCount = result.entries.length;
+      rawEntries = append ? rawEntries.concat(result.entries) : result.entries.slice();
+      entriesCache = rawEntries.slice().sort((a, b) => a.sequence_number - b.sequence_number);
+      offset += PAGE_SIZE;
+      renderRows();
+      qs('load-more-btn').style.display = lastPageCount === PAGE_SIZE ? 'inline-flex' : 'none';
+    } catch (e) {
+      qs('audit-error').innerHTML = `<div class="alert error">Failed to load: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function renderRows(verifyResult) {
+    const body = qs('audit-body');
+    if (entriesCache.length === 0) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="7">No entries posted yet for this App.</td></tr>';
+      return;
+    }
+    const entriesVerified = verifyResult ? verifyResult.entries_verified : null;
+    const breachSeq = verifyResult && !verifyResult.valid ? verifyResult.breach.sequence_number : null;
+
+    body.innerHTML = entriesCache.map(e => {
+      let rowClass = '', statusHtml = '<span class="badge gray">Not yet verified</span>';
+      if (verifyResult) {
+        if (breachSeq !== null && e.sequence_number === breachSeq) {
+          rowClass = 'row-breach';
+          statusHtml = `<span class="badge red" title="${esc(verifyResult.breach.message)}">Breach: ${esc(verifyResult.breach.reason)}</span>`;
+        } else if (e.sequence_number <= entriesVerified) {
+          rowClass = 'row-verified';
+          statusHtml = '<span class="badge green">Verified &#10003;</span>';
+        } else {
+          statusHtml = '<span class="badge amber">Not yet reached</span>';
+        }
+      }
+      return `
+        <tr class="${rowClass}">
+          <td>${e.sequence_number}</td>
+          <td>${esc(e.reference_id)}</td>
+          <td><span class="badge ${e.entry_type === 'REVERSAL' ? 'amber' : 'gray'}">${esc(e.entry_type)}</span></td>
+          <td><code title="${esc(e.previous_block_hash)}">${shortId(e.previous_block_hash)}</code></td>
+          <td><code title="${esc(e.entry_payload_hash)}">${shortId(e.entry_payload_hash)}</code></td>
+          <td><code title="${esc(e.block_hash)}">${shortId(e.block_hash)}</code></td>
+          <td>${statusHtml}</td>
+        </tr>`;
+    }).join('');
   }
 
   async function runVerify() {
     const btn = qs('run-btn');
-    const box = qs('audit-result');
+    const summary = qs('audit-summary');
     const appId = qs('audit-app-select').value;
-    if (!appId) { box.innerHTML = '<div class="alert error">No App selected.</div>'; return; }
+    if (!appId) { summary.innerHTML = '<div class="alert error">No App selected.</div>'; return; }
     btn.disabled = true; btn.textContent = 'Verifying…';
-    box.innerHTML = '<p class="spinner">Recomputing hash chain…</p>';
+    summary.innerHTML = '<p class="spinner">Recomputing hash chain…</p>';
     try {
       const result = await consoleApi('/api/v1/audit', 'verify_audit', { app_id: appId });
       if (result.valid) {
-        box.innerHTML = `
-          <div class="alert success">Chain valid - no tampering detected.</div>
+        summary.innerHTML = `
+          <div class="alert success">Chain valid - every entry recomputed from scratch matches what's stored.</div>
           <div class="stat-grid">
             <div class="stat-card ok"><div class="label">Entries Verified</div><div class="value">${result.entries_verified}</div></div>
             <div class="stat-card"><div class="label">Total Entries</div><div class="value">${result.total_entries}</div></div>
@@ -56,9 +153,8 @@
         `;
       } else {
         const b = result.breach;
-        box.innerHTML = `
-          <div class="alert error"><strong>Tamper detected</strong> at sequence_number ${b.sequence_number} -
-            reason: <code>${esc(b.reason)}</code></div>
+        summary.innerHTML = `
+          <div class="alert error"><strong>Tamper detected</strong> at sequence_number ${b.sequence_number} - reason: <code>${esc(b.reason)}</code></div>
           <div class="stat-grid">
             <div class="stat-card ok"><div class="label">Entries Verified Before Breach</div><div class="value">${result.entries_verified}</div></div>
             <div class="stat-card bad"><div class="label">Breach Sequence</div><div class="value">${b.sequence_number}</div></div>
@@ -68,10 +164,56 @@
           <pre class="mono" style="white-space:pre-wrap;background:#f8fafc;padding:12px;border-radius:8px">${esc(JSON.stringify(b.details, null, 2))}</pre>
         `;
       }
+      renderRows(result);
     } catch (e) {
-      box.innerHTML = `<div class="alert error">${esc(e.message)}</div>`;
+      summary.innerHTML = `<div class="alert error">${esc(e.message)}</div>`;
     } finally {
       btn.disabled = false; btn.textContent = 'Run Verification';
+    }
+  }
+
+  function csvEscape(v) {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  function downloadBlob(filename, text, mime) {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function downloadFullChain() {
+    const btn = qs('download-btn');
+    const appId = qs('audit-app-select').value;
+    if (!appId) { qs('audit-error').innerHTML = '<div class="alert error">No App selected.</div>'; return; }
+    const appName = (appsCache.find(a => a.id === appId) || {}).app_name || appId;
+
+    btn.disabled = true; btn.textContent = 'Fetching…';
+    qs('audit-error').innerHTML = '';
+    try {
+      let all = [], fetchOffset = 0, page;
+      for (let i = 0; i < MAX_DOWNLOAD_PAGES; i++) {
+        page = await consoleApi('/api/v1/ledger', 'list_entries', { app_id: appId, limit: FETCH_PAGE_SIZE, offset: fetchOffset });
+        all = all.concat(page.entries);
+        if (page.entries.length < FETCH_PAGE_SIZE) break;
+        fetchOffset += FETCH_PAGE_SIZE;
+        btn.textContent = `Fetching… (${all.length})`;
+      }
+      all.sort((a, b) => a.sequence_number - b.sequence_number);
+
+      const header = ['sequence_number', 'reference_id', 'entry_type', 'reverses_entry_id', 'posted_at',
+        'previous_block_hash', 'entry_payload_hash', 'block_hash'];
+      const lines = [header.join(',')].concat(all.map(e => header.map(k => csvEscape(e[k])).join(',')));
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadBlob(`hash_chain_${appName.replace(/[^a-z0-9]+/gi, '_')}_${stamp}.csv`, lines.join('\n'), 'text/csv');
+    } catch (e) {
+      qs('audit-error').innerHTML = `<div class="alert error">Download failed: ${esc(e.message)}</div>`;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Download Full Chain (CSV)';
     }
   }
 

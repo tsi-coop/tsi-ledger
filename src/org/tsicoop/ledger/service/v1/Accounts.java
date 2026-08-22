@@ -69,7 +69,7 @@ public class Accounts implements Action {
 
     private void handleCreateAccount(JSONObject input, HttpServletResponse res, HttpServletRequest req) throws SQLException {
         String accountCode = (String) input.get("account_code");
-        String accountName = (String) input.get("account_name");
+        String accountName = ((String) input.get("account_name")).trim();
         String accountType = normalizeAccountType((String) input.get("account_type"), res, req);
         if (accountType == null) return;
         UUID createdBy = InputProcessor.getUserId(req);
@@ -78,6 +78,17 @@ public class Accounts implements Action {
         try {
             pool = new PoolDB();
             conn = pool.getConnection();
+
+            // Pre-check for a friendlier message than the generic unique-violation catch below -
+            // two accounts sharing a name (case-insensitive) under different codes would otherwise
+            // silently split one real balance across two ledger lines.
+            String clashingCode = findAccountCodeByNameCaseInsensitive(conn, accountName);
+            if (clashingCode != null) {
+                OutputProcessor.errorResponse(res, 409, "Conflict",
+                        "An account named '" + accountName + "' already exists (account_code " + clashingCode + ").", req.getRequestURI());
+                return;
+            }
+
             pstmt = conn.prepareStatement(
                     "INSERT INTO accounts (account_code, account_name, account_type, created_by_user_id) VALUES (?, ?, ?, ?) " +
                     "RETURNING id, is_active, created_at");
@@ -99,12 +110,21 @@ public class Accounts implements Action {
             OutputProcessor.send(res, 201, output);
         } catch (SQLException e) {
             if (UNIQUE_VIOLATION_SQLSTATE.equals(e.getSQLState())) {
-                OutputProcessor.errorResponse(res, 409, "Conflict", "account_code already exists.", req.getRequestURI());
+                OutputProcessor.errorResponse(res, 409, "Conflict", "account_code or account_name already exists.", req.getRequestURI());
             } else {
                 throw e;
             }
         } finally {
             if (pool != null) pool.cleanup(rs, pstmt, conn);
+        }
+    }
+
+    private String findAccountCodeByNameCaseInsensitive(Connection conn, String accountName) throws SQLException {
+        try (PreparedStatement pstmt = conn.prepareStatement("SELECT account_code FROM accounts WHERE LOWER(account_name) = LOWER(?)")) {
+            pstmt.setString(1, accountName);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                return rs.next() ? rs.getString("account_code") : null;
+            }
         }
     }
 

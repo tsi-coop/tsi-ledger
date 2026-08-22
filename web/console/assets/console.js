@@ -37,6 +37,23 @@ function genIdempotencyKey() {
     : 'ik-' + Date.now() + '-' + Math.random().toString(16).slice(2);
 }
 
+/* ---------- Shared modal open/close (any page with a .modal-overlay) ---------- */
+
+function openModal(id) { qs(id).classList.add('open'); }
+function closeModal(id) { qs(id).classList.remove('open'); }
+
+/* ---------- Brand mark - single-color icon + wordmark, reused wherever the
+   TSI Ledger identity appears (sidebar, login, tour). ---------- */
+
+function brandMarkHtml() {
+  return `<span class="brand-mark" aria-hidden="true">
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="1" y="1" width="20" height="20" rx="6" fill="currentColor"/>
+      <path d="M6 8h10M6 11h10M6 14h6" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>
+    </svg>
+  </span>`;
+}
+
 async function copyText(text, btn) {
   try {
     await navigator.clipboard.writeText(text);
@@ -147,7 +164,7 @@ function renderShell(activeKey, pageTitle, pageSub) {
     </div>
     <div class="shell-backdrop" id="shell-backdrop"></div>
     <nav class="shell-sidebar" id="shell-sidebar">
-      <div class="shell-brand">TSI <span>Ledger</span></div>
+      <div class="shell-brand">${brandMarkHtml()}<span class="brand-word"><strong>TSI</strong> Ledger</span></div>
       <div class="shell-nav" id="shell-nav">
         ${NAV_ITEMS.map(i => `<a href="${i.href}" class="${i.key === activeKey ? 'active' : ''}" data-admin-only="${!!i.adminOnly}">${i.label}</a>`).join('')}
       </div>

@@ -59,13 +59,17 @@ a:hover { text-decoration: underline; }
 .shell-sidebar.open { transform: translateX(0); }
 
 .shell-brand {
-  padding: 20px 18px;
-  font-weight: 700;
-  font-size: 1.15rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px;
+  font-size: 1.1rem;
   color: var(--primary);
   border-bottom: 1px solid var(--border);
 }
-.shell-brand span { color: var(--accent); }
+.brand-mark { flex-shrink: 0; display: flex; color: var(--primary); }
+.brand-word { font-weight: 500; letter-spacing: -0.01em; }
+.brand-word strong { font-weight: 800; }
 
 .shell-nav { flex: 1; padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; }
 .shell-nav a {
@@ -119,6 +123,18 @@ main.shell-main { padding: 28px 32px; max-width: 1100px; }
 h1 { font-size: 1.5rem; font-weight: 900; margin: 0 0 4px; letter-spacing: -0.02em; color: var(--ink); }
 h2 { font-size: 1.05rem; font-weight: 700; margin: 0 0 12px; letter-spacing: -0.01em; color: #334155; }
 .page-sub { color: var(--muted); margin: 0 0 24px; }
+
+#shell-page-header { position: relative; }
+.help-icon-btn {
+  position: absolute; top: 2px; right: 0;
+  width: 30px; height: 30px; padding: 0; border-radius: 50%;
+  justify-content: center; font-weight: 800; color: var(--primary);
+}
+.help-icon-btn-inline {
+  width: 20px; height: 20px; padding: 0; border-radius: 50%;
+  justify-content: center; font-weight: 800; font-size: 0.7rem;
+  color: var(--primary); margin-left: 6px; vertical-align: middle;
+}
 
 /* ---- Cards, grids ---- */
 
@@ -255,3 +271,8 @@ tbody tr:hover { background: #f8fafc; }
 .balance-check { font-weight: 700; padding: 8px 12px; border-radius: 8px; margin-top: 10px; }
 .balance-check.ok { background: #ecfdf5; color: #065f46; }
 .balance-check.bad { background: #fef2f2; color: #991b1b; }
+
+/* ---- Hash chain log (Audit page) ---- */
+tr.row-verified { background: #f0fdf9; }
+tr.row-breach { background: #fef2f2; }
+tr.row-breach:hover { background: #fee2e2; }
