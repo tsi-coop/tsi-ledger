@@ -2,11 +2,11 @@
 
 **An open-source, API-first double-entry accounting engine.**
 
-Today, enterprise systems are isolated. Sales systems, HR, and vendor portals each maintain their own data model, leaving financial entries fragmented across the business. Someone exports the entries from these systems, or a batch job pushes them into the ERP or Financial Accounting system overnight, and accounting teams get rightfully frustrated every time an integration breaks, or a new system launches without a native accounting path.
+Today, our enterprise systems are isolated. Sales Systems, HR, and Vendor Portals maintain their own data models, leaving the financial entries fragmented. Someone exports the financial entries from these systems, or we run a batch job to push the entries into the ERP or Financial Accounting system.
 
-We are entering an era where AI agents can autonomously approve vendor payments based on contract agreements, adjust payroll based on real-time performance, and execute settlements across sales channels on the fly. Organisations will build fluid interfaces and workflows that cut across traditional software boundaries, and they will need a single source of financial truth, accessible in real time by the accounting team, underneath all of it.
+Accounting teams care deeply about having a single source of financial truth across systems. They get rightfully frustrated when integrations break or when a new system launches without a native accounting integration. Now, we are entering an era where AI agents can autonomously approve vendor payments based on contract agreements, adjust payroll based on real-time performance, and execute settlements across sales channels on the fly. 
 
-Anticipating this need, we are soft launching **TSI Ledger**: an open-source, API-first double-entry accounting engine, part of the **TSI Coop** composable data infrastructure stack.
+Organisations will build fluid interfaces and workflows that cut across traditional software boundaries. They will need a single source of financial truth thats accessible real-time by the accounting teams. Anticipating this need,  we are soft launching TSI Ledger: an open-source, API-first double-entry accounting engine as part of our TSI Coop composable data infrastructure stack.
 
 ---
 

@@ -32,9 +32,11 @@ services:
       - ledger_network
 
   jetty_app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: "${APP_IMAGE:-tsicoop/tsi-ledger:latest}"
+    # Uncomment to build from local source instead of pulling the image above:
+    #build:
+    #    context: .
+    #    dockerfile: Dockerfile
     container_name: tsi_ledger_engine
     restart: unless-stopped
     ports:
