@@ -54,6 +54,8 @@ docker compose up -d
 
 Once the containers are up, head to **http://localhost:8086/console** and complete the first-time setup wizard to create the first Admin operator. From there, **http://localhost:8086/tour** walks you through the Ops Console (Chart of Accounts, Apps/API keys, Journal Entries, and Reports) before you start posting real entries.
 
+**Video walkthrough:** [https://youtu.be/NNxa64yXLOw](https://youtu.be/NNxa64yXLOw)
+
 ### Environment variables
 
 All secrets have safe local defaults for evaluation. Override them for any non-local deployment.
