@@ -22,7 +22,7 @@ Double-entry is not a convention here, it's a constraint the engine enforces. Ev
 
 ### Built-in multi-tenancy
 
-Each posting source (an HRMS, a commerce platform, a lending product, an agent) is provisioned as an **App** with its own `API_KEY`/`API_SECRET` pair - `API_KEY` is a non-secret identifier, always visible in the console; `API_SECRET` is the actual credential, shown once. All Apps post against one shared, organization-wide Chart of Accounts, so the accounting team always has one ledger to look at instead of one per integration. An Admin can also grant a specific App (e.g. a Financials system) permission to manage the Chart of Accounts itself, via its own credentials, instead of every COA change requiring a console Admin session.
+Each posting source (an HRMS, a commerce platform, a lending product, an agent) is provisioned as an App with its own `API_KEY`/`API_SECRET` pair - `API_KEY` is a non-secret identifier, always visible in the console; `API_SECRET` is the actual credential, shown once. All Apps post against one shared, organization-wide Chart of Accounts, so the accounting team always has one ledger to look at instead of one per integration. An Admin can also grant a specific App (e.g. a Financials system) permission to manage the Chart of Accounts itself, via its own credentials, instead of every COA change requiring a console Admin session.
 
 ### Tamper-evident audit trail
 
