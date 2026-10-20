@@ -123,10 +123,6 @@ public class InterceptingFilter implements Filter {
                 OutputProcessor.errorResponse(res, HttpServletResponse.SC_BAD_REQUEST, "Bad Request", "Missing required '_func' attribute in input JSON.", uri);
                 return;
             }
-            if (!InputProcessor.validate(req, res)) {
-                return;
-            }
-
             boolean authenticated;
             switch (authMode) {
                 case PUBLIC:
@@ -146,6 +142,12 @@ public class InterceptingFilter implements Filter {
 
             if (!authenticated) {
                 OutputProcessor.errorResponse(res, HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized", "Missing or invalid API credentials.", uri);
+                return;
+            }
+
+            // Validated only after auth so an unauthenticated caller can't probe the
+            // schema via 400 responses naming missing fields.
+            if (!InputProcessor.validate(req, res)) {
                 return;
             }
 

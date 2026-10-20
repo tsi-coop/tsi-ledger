@@ -9,6 +9,8 @@ import org.tsicoop.ledger.framework.OutputProcessor;
 import org.tsicoop.ledger.framework.PasswordHasher;
 import org.tsicoop.ledger.framework.PoolDB;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -24,6 +26,11 @@ import java.sql.SQLException;
  * to log into.
  */
 public class Setup implements Action {
+
+    // Shared secret gating initial_setup. Must be set by whoever deploys the app —
+    // there is no built-in fallback, so setup stays disabled (fails closed) until
+    // this is explicitly configured.
+    private static final String BOOTSTRAP_TOKEN_ENV = "TSI_BOOTSTRAP_TOKEN";
 
     @Override
     public void post(HttpServletRequest req, HttpServletResponse res) {
@@ -48,6 +55,20 @@ public class Setup implements Action {
     }
 
     private void handleInitialSetup(JSONObject input, HttpServletResponse res, HttpServletRequest req) throws SQLException {
+        String bootstrapToken = System.getenv(BOOTSTRAP_TOKEN_ENV);
+        if (bootstrapToken == null || bootstrapToken.isEmpty()) {
+            OutputProcessor.errorResponse(res, 503, "Setup Disabled",
+                    "Initial setup is disabled: " + BOOTSTRAP_TOKEN_ENV + " is not configured on the server.", req.getRequestURI());
+            return;
+        }
+        // Checked before any DB access so a caller without the token learns nothing
+        // about whether the system has already been configured.
+        Object providedToken = input.get("setup_token");
+        if (!(providedToken instanceof String) || !constantTimeEquals((String) providedToken, bootstrapToken)) {
+            OutputProcessor.errorResponse(res, 401, "Unauthorized", "Invalid or missing setup token.", req.getRequestURI());
+            return;
+        }
+
         String name = (String) input.get("name");
         String email = normalizeEmail((String) input.get("email"));
         String password = (String) input.get("password");
@@ -62,8 +83,14 @@ public class Setup implements Action {
         try {
             pool = new PoolDB();
             conn = pool.getConnection();
+            // SERIALIZABLE + explicit commit closes the check-then-insert race: two requests
+            // that both observe an empty operators table can no longer both succeed —
+            // Postgres aborts the loser with SQLState 40001 below.
+            conn.setAutoCommit(false);
+            conn.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
 
             if (operatorCountAtLeastOne(conn)) {
+                conn.rollback();
                 OutputProcessor.errorResponse(res, 409, "Conflict",
                         "System is already configured. Sign in and use the Users module instead.", req.getRequestURI());
                 return;
@@ -78,6 +105,7 @@ public class Setup implements Action {
                 pstmt.setString(3, passwordHash);
                 try (ResultSet rs = pstmt.executeQuery()) {
                     rs.next();
+                    conn.commit();
                     JSONObject output = new JSONObject();
                     output.put("id", rs.getString("id"));
                     output.put("name", name.trim());
@@ -87,13 +115,20 @@ public class Setup implements Action {
                     OutputProcessor.send(res, 201, output);
                 }
             } catch (SQLException e) {
-                if ("23505".equals(e.getSQLState())) {
+                try { conn.rollback(); } catch (SQLException ignored) {}
+                if ("23505".equals(e.getSQLState()) || "40001".equals(e.getSQLState())) {
                     OutputProcessor.errorResponse(res, 409, "Conflict", "System is already configured.", req.getRequestURI());
                 } else {
                     throw e;
                 }
             }
         } finally {
+            if (conn != null) {
+                try {
+                    conn.setAutoCommit(true);
+                    conn.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
+                } catch (SQLException ignored) {}
+            }
             if (pool != null) pool.cleanup(null, null, conn);
         }
     }
@@ -116,6 +151,10 @@ public class Setup implements Action {
              ResultSet rs = pstmt.executeQuery()) {
             return rs.next();
         }
+    }
+
+    private static boolean constantTimeEquals(String a, String b) {
+        return MessageDigest.isEqual(a.getBytes(StandardCharsets.UTF_8), b.getBytes(StandardCharsets.UTF_8));
     }
 
     private static String normalizeEmail(String raw) {

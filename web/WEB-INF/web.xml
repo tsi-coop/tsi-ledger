@@ -27,4 +27,77 @@
 		<dispatcher>REQUEST</dispatcher>
 		<dispatcher>FORWARD</dispatcher>
 	</filter-mapping>
+	<!--
+      Server-side gate for the static Ops Console pages: without it they are served
+      to any HTTP client and the only login check is client-side JS. Requires a valid
+      session cookie (issued by Auth.login) or redirects to the login page.
+      login, reset-password and setup/init stay public by design.
+    -->
+	<filter>
+		<filter-name>CONSOLE_AUTH_FILTER</filter-name>
+		<filter-class>org.tsicoop.ledger.framework.ConsoleAuthFilter</filter-class>
+	</filter>
+
+	<filter-mapping>
+		<filter-name>CONSOLE_AUTH_FILTER</filter-name>
+		<url-pattern>/console/dashboard.html</url-pattern>
+		<dispatcher>REQUEST</dispatcher>
+		<dispatcher>FORWARD</dispatcher>
+	</filter-mapping>
+
+	<filter-mapping>
+		<filter-name>CONSOLE_AUTH_FILTER</filter-name>
+		<url-pattern>/console/apps.html</url-pattern>
+		<dispatcher>REQUEST</dispatcher>
+		<dispatcher>FORWARD</dispatcher>
+	</filter-mapping>
+
+	<filter-mapping>
+		<filter-name>CONSOLE_AUTH_FILTER</filter-name>
+		<url-pattern>/console/entries.html</url-pattern>
+		<dispatcher>REQUEST</dispatcher>
+		<dispatcher>FORWARD</dispatcher>
+	</filter-mapping>
+
+	<filter-mapping>
+		<filter-name>CONSOLE_AUTH_FILTER</filter-name>
+		<url-pattern>/console/audit.html</url-pattern>
+		<dispatcher>REQUEST</dispatcher>
+		<dispatcher>FORWARD</dispatcher>
+	</filter-mapping>
+
+	<filter-mapping>
+		<filter-name>CONSOLE_AUTH_FILTER</filter-name>
+		<url-pattern>/console/reports.html</url-pattern>
+		<dispatcher>REQUEST</dispatcher>
+		<dispatcher>FORWARD</dispatcher>
+	</filter-mapping>
+
+	<filter-mapping>
+		<filter-name>CONSOLE_AUTH_FILTER</filter-name>
+		<url-pattern>/console/accounts.html</url-pattern>
+		<dispatcher>REQUEST</dispatcher>
+		<dispatcher>FORWARD</dispatcher>
+	</filter-mapping>
+
+	<filter-mapping>
+		<filter-name>CONSOLE_AUTH_FILTER</filter-name>
+		<url-pattern>/console/users.html</url-pattern>
+		<dispatcher>REQUEST</dispatcher>
+		<dispatcher>FORWARD</dispatcher>
+	</filter-mapping>
+
+	<!--
+      Jetty's bundled webdefault-ee10.xml sets dirAllowed=true on the "default"
+      servlet, so any directory with no welcome file (e.g. /console/setup/) is
+      auto-listed. Redeclaring "default" here overrides just that init-param.
+    -->
+	<servlet>
+		<servlet-name>default</servlet-name>
+		<servlet-class>org.eclipse.jetty.ee10.servlet.DefaultServlet</servlet-class>
+		<init-param>
+			<param-name>dirAllowed</param-name>
+			<param-value>false</param-value>
+		</init-param>
+	</servlet>
 </web-app>

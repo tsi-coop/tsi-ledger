@@ -49,10 +49,11 @@ Trial balance, balance sheet, and income statement are computed live from the le
 ```bash
 git clone https://github.com/tsi-coop/tsi-ledger.git
 cd tsi-ledger
+export TSI_BOOTSTRAP_TOKEN=$(openssl rand -hex 24)   # needed once, by the setup wizard
 docker compose up -d
 ```
 
-Once the containers are up, head to **http://localhost:8086/console** and complete the first-time setup wizard to create the first Admin operator. From there, **http://localhost:8086/tour** walks you through the Ops Console (Chart of Accounts, Apps/API keys, Journal Entries, and Reports) before you start posting real entries.
+Once the containers are up, head to **http://localhost:8086/console** and complete the first-time setup wizard (enter your `TSI_BOOTSTRAP_TOKEN`) to create the first Admin operator. From there, **http://localhost:8086/tour** walks you through the Ops Console (Chart of Accounts, Apps/API keys, Journal Entries, and Reports) before you start posting real entries.
 
 **Video walkthrough:** [https://youtu.be/NNxa64yXLOw](https://youtu.be/NNxa64yXLOw)
 
@@ -66,6 +67,7 @@ All secrets have safe local defaults for evaluation. Override them for any non-l
 | `POSTGRES_USER` | `tsi_ledger_admin` | Database user |
 | `POSTGRES_PASSWD` | `secure_dev_password` | Database password |
 | `JWT_SECRET` | *(dev placeholder)* | Signs Ops Console operator session tokens (**change in production**) |
+| `TSI_BOOTSTRAP_TOKEN` | *(none)* | Required by the first-run setup wizard. Setup is disabled until you set it (e.g. `openssl rand -hex 24`) |
 | `TSI_LEDGER_ENV` | `local` | Deployment environment tag |
 | `ALLOWED_ORIGINS` | `http://localhost:8086` | Comma-separated origins allowed to call the API from a browser |
 | `APP_PORT_MAP` | `8086:8080` | Host:container port mapping |

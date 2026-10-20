@@ -5,7 +5,8 @@
     "_func": { "type": "string" },
     "name": { "type": "string", "minLength": 1, "maxLength": 128 },
     "email": { "type": "string", "minLength": 3, "maxLength": 255 },
-    "password": { "type": "string", "minLength": 12 }
+    "password": { "type": "string", "minLength": 12 },
+    "setup_token": { "type": "string", "minLength": 1 }
   },
-  "required": ["_func", "name", "email", "password"]
+  "required": ["_func", "name", "email", "password", "setup_token"]
 }

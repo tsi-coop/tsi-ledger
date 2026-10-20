@@ -49,6 +49,8 @@ services:
       TSI_LEDGER_ENV: "${TSI_LEDGER_ENV:-local}"
       # LOCAL EVALUATION DEFAULTS — override all of these in production via environment or secrets manager
       JWT_SECRET: "${JWT_SECRET:-tsi-ledger-local-dev-secret-do-not-use-in-production}"
+      # Required for first-run setup (no default: setup is disabled until this is set).
+      TSI_BOOTSTRAP_TOKEN: "${TSI_BOOTSTRAP_TOKEN:-}"
       ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-http://localhost:8086}"
     depends_on:
       postgres_db:

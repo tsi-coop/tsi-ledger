@@ -36,6 +36,11 @@
 
   <form id="setup-form">
     <div class="field">
+      <label for="setup-token">Setup Token</label>
+      <input id="setup-token" type="password" required autocomplete="off" placeholder="TSI_BOOTSTRAP_TOKEN value">
+      <p class="hint">The value of the TSI_BOOTSTRAP_TOKEN environment variable set on this server. Ask whoever deployed the application.</p>
+    </div>
+    <div class="field">
       <label for="setup-name">Full Name</label>
       <input id="setup-name" required maxlength="128" placeholder="System Administrator">
     </div>
@@ -71,6 +76,7 @@
     e.preventDefault();
     errorBox.style.display = 'none';
 
+    const setup_token = document.getElementById('setup-token').value;
     const name = document.getElementById('setup-name').value.trim();
     const email = document.getElementById('setup-email').value.trim();
     const password = document.getElementById('setup-password').value;
@@ -88,7 +94,7 @@
       const res = await fetch('/api/v1/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ _func: 'initial_setup', name, email, password })
+        body: JSON.stringify({ _func: 'initial_setup', setup_token, name, email, password })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
